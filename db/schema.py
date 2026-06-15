@@ -1,19 +1,34 @@
 """
-SQLite schema definitions and Pydantic data models.
+SQLite schema reference for the Denial Prevention Copilot audit database.
 
-Tables:
-  claims        — one row per claim reviewed (claim_id, payer, npi, codes, dx,
-                  modifiers, pos, units, submitted_at, status).
-  findings      — one row per agent finding (finding_id, claim_id, source_agent,
-                  severity, issue, recommended_fix, citation_doc_id,
-                  citation_section, citation_effective_date, confidence, created_at).
-  decisions     — one row per human action (decision_id, finding_id, claim_id,
-                  action [accept|modify|override], modified_value, override_reason,
-                  decided_by, decided_at). Append-only; no updates.
-  audit_events  — catch-all timeline log (event_id, claim_id, event_type,
-                  payload_json, created_at). Covers system events (rule failures,
-                  low-confidence escalations) not captured in findings/decisions.
+Implemented table: audit_decisions (see db/audit_repository.py for DDL).
 
-Pydantic models: ClaimIn, Finding, Decision, RiskAssessment, AuditEvent.
-These are the shared data contracts between the rules layer, agents, and UI.
+audit_decisions columns
+-----------------------
+id               INTEGER  PK AUTOINCREMENT
+timestamp        TEXT     ISO-8601 UTC insert time
+claim_id         TEXT     claim being reviewed
+finding_id       TEXT     12-char SHA-256 hex from rule_engine._make_finding_id()
+source           TEXT     "rule_layer" | "agent_layer"
+severity         TEXT     "HIGH" | "MEDIUM" | "LOW"
+issue            TEXT     human-readable finding description
+recommendation   TEXT     suggested corrective action
+citation_source  TEXT     human label e.g. "NCCI PTP"
+citation_doc_id  TEXT     stable document identifier e.g. "NCCI-PTP-SYNTHETIC"
+citation_section TEXT     table, chapter, or policy section cited
+citation_edition TEXT     version label e.g. "FY2026" or "synthetic sample"
+confidence       REAL     0.0–1.0 rule engine confidence score
+user_decision    TEXT     "accepted" | "overridden"
+override_reason  TEXT     required non-empty when user_decision == "overridden"
+reviewer_name    TEXT     human reviewer identifier
+model_version    TEXT     rule/model version that produced the finding
+prompt_version   TEXT     prompt version ("n/a" for pure rule layer)
+
+Design notes
+------------
+- Append-only: no UPDATE or DELETE is ever issued.
+- finding_id is deterministic (SHA-256) so decisions can be correlated
+  with findings across sessions without a findings table.
+- Governance: citation_source + citation_doc_id must be non-empty before
+  a decision is persisted (enforced by AuditRepository.save_decision).
 """
