@@ -1,18 +1,82 @@
 """
 NCCI PTP (Procedure-to-Procedure) edit table lookups.
 
-Ingests the CMS quarterly NCCI PTP edit CSV files (one for physician/practitioner
-services, one for outpatient hospital services) from data/reference/ and exposes
-a lookup function that, given a pair of CPT/HCPCS codes, returns:
-  - Whether a PTP edit exists for the pair.
-  - Which code is the column 1 (comprehensive) and column 2 (component) code.
-  - The modifier indicator (0 = no modifier bypass allowed, 1 = bypass with
-    appropriate modifier, 9 = not applicable).
+Sprint 1: backed by a hardcoded sample edit table.
+Production path: replace _load_ptp_edits() with a CSV loader that reads
+the CMS quarterly PTP file from data/reference/ncci_ptp_<quarter>.csv.
+The public interface (check_ncci_pairs) stays the same.
 
-NCCI files are versioned by quarter (e.g. "2025Q4") so citations can name the
-exact edition. The module raises DataExpiredError if the loaded file is more than
-one quarter old.
-
-Source: CMS NCCI edit tables (https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits).
-Refresh cadence: quarterly.
+Modifier indicator values:
+  0 = no modifier bypass allowed (hard bundle)
+  1 = bypass allowed with an appropriate modifier
+  9 = not applicable
 """
+
+from rules.models import ClaimIn, Finding
+
+
+# ---------------------------------------------------------------------------
+# Data source — swap this function to load from the real CMS CSV in production
+# ---------------------------------------------------------------------------
+
+def _load_ptp_edits() -> list[dict]:
+    """
+    Returns PTP edit rules as a list of dicts.
+
+    Each entry represents one CMS NCCI PTP edit pair:
+      col1: comprehensive (column 1) code
+      col2: component (column 2) code — the one to remove
+      modifier_indicator: 0 | 1 | 9
+      edition: data version for citation (quarter string in production)
+    """
+    return [
+        {
+            "col1": "80053",
+            "col2": "80048",
+            "modifier_indicator": 0,
+            "edition": "synthetic sample",
+        },
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Public interface
+# ---------------------------------------------------------------------------
+
+def check_ncci_pairs(claim: ClaimIn) -> list[Finding]:
+    """
+    Return a Finding for each NCCI PTP edit pair present in the claim.
+
+    A HIGH-severity finding is raised whenever both the column-1 and column-2
+    codes appear on the same claim.  Modifier indicator 0 means no bypass is
+    possible; indicator 1 means a modifier could resolve it (noted in the
+    recommendation).
+    """
+    findings = []
+    code_set = set(claim.cpt_codes)
+
+    for edit in _load_ptp_edits():
+        col1 = edit["col1"]
+        col2 = edit["col2"]
+        if col1 not in code_set or col2 not in code_set:
+            continue
+
+        if edit["modifier_indicator"] == 0:
+            bypass_note = "No modifier bypass is allowed for this pair."
+        elif edit["modifier_indicator"] == 1:
+            bypass_note = "A modifier may allow separate billing if clinically appropriate — confirm before adding."
+        else:
+            bypass_note = ""
+
+        findings.append(Finding(
+            rule="ncci_ptp",
+            severity="HIGH",
+            issue=f"Bundled code pair: {col2} is a component of {col1}",
+            recommendation=(
+                f"Remove {col2} when billed with {col1}. {bypass_note}"
+            ).strip(),
+            citation=f"NCCI PTP edit table, {edit['edition']}",
+            confidence=0.95,
+        ))
+
+    return findings

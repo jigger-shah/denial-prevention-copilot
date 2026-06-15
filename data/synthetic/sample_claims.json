@@ -1,0 +1,57 @@
+[
+  {
+    "claim_id": "CLM-001",
+    "description": "PRD worked example — multiple denial triggers",
+    "payer": "Medicare Part B",
+    "npi": "1234567890",
+    "cpt_codes": ["99214", "80053", "80048", "36415"],
+    "icd10_codes": ["Z00.00"],
+    "modifiers": [],
+    "place_of_service": "11",
+    "units": {"99214": 1, "80053": 1, "80048": 1, "36415": 1}
+  },
+  {
+    "claim_id": "CLM-002",
+    "description": "Clean claim — URI, problem-oriented E/M with matching diagnosis",
+    "payer": "BCBS Commercial",
+    "npi": "9876543210",
+    "cpt_codes": ["99213", "85025"],
+    "icd10_codes": ["J06.9"],
+    "modifiers": [],
+    "place_of_service": "11",
+    "units": {"99213": 1, "85025": 1}
+  },
+  {
+    "claim_id": "CLM-003",
+    "description": "Bundling issue only — metabolic panels with hypertension",
+    "payer": "Medicare Part B",
+    "npi": "1234567890",
+    "cpt_codes": ["99213", "80053", "80048"],
+    "icd10_codes": ["I10"],
+    "modifiers": [],
+    "place_of_service": "11",
+    "units": {"99213": 1, "80053": 1, "80048": 1}
+  },
+  {
+    "claim_id": "CLM-004",
+    "description": "Diagnosis mismatch only — well-visit dx billed with problem E/M",
+    "payer": "Medicare Part B",
+    "npi": "1234567890",
+    "cpt_codes": ["99214"],
+    "icd10_codes": ["Z00.00"],
+    "modifiers": [],
+    "place_of_service": "11",
+    "units": {"99214": 1}
+  },
+  {
+    "claim_id": "CLM-005",
+    "description": "Clean preventive visit — correct preventive code with well-visit dx",
+    "payer": "Medicare Part B",
+    "npi": "1234567890",
+    "cpt_codes": ["99395"],
+    "icd10_codes": ["Z00.00"],
+    "modifiers": [],
+    "place_of_service": "11",
+    "units": {"99395": 1}
+  }
+]

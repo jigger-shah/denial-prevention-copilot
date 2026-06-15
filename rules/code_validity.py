@@ -1,19 +1,151 @@
 """
-Code validity lookups for ICD-10-CM, CPT, and HCPCS Level II.
+Code validity and diagnosis-to-procedure conflict checks.
 
-Ingests annual ICD-10-CM code set and quarterly HCPCS Level II files from
-data/reference/ and exposes lookup functions that verify:
-  - ICD-10-CM: code exists in the current fiscal year's release, is a valid
-    billable code (leaf node, not a header), and is not a placeholder-only code.
-  - CPT: code is in the current year's CPT code set (from HCPCS crosswalk or
-    bundled reference), is not deleted, and is appropriate for the reported
-    place of service.
-  - HCPCS Level II: code exists, is active (not terminated), and the termination
-    date (if any) is after the date of service.
-
-Diagnosis specificity is flagged when an unspecified code (typically ending in
-.9 or having a more specific alternative) is used where a specific code exists.
-
-Source: CMS ICD-10-CM (annual, October release); CMS HCPCS Level II (quarterly).
-Refresh cadence: ICD-10 annual, HCPCS quarterly.
+Sprint 1: backed by hardcoded sample rule tables.
+Production path: replace _load_dx_procedure_rules() with a loader that reads
+ICD-10-CM reference data from data/reference/; replace _load_modifier_rules()
+with the NCCI Policy Manual modifier guidance.
+The public interface (check_code_validity) stays the same.
 """
+
+from rules.models import ClaimIn, Finding
+
+
+# ---------------------------------------------------------------------------
+# Code sets — in production these are loaded from reference files
+# ---------------------------------------------------------------------------
+
+# Problem-oriented E/M codes (office/outpatient, established and new patients)
+_PROBLEM_EM_CODES = frozenset({
+    "99202", "99203", "99204", "99205",
+    "99211", "99212", "99213", "99214", "99215",
+})
+
+# ICD-10 prefixes that signal a well/preventive-visit context
+_PREVENTIVE_DX_PREFIXES = ("Z00",)
+
+
+# ---------------------------------------------------------------------------
+# Data sources — swap these functions for real reference data in production
+# ---------------------------------------------------------------------------
+
+def _load_dx_procedure_rules() -> list[dict]:
+    """
+    Returns diagnosis-to-procedure conflict rules.
+
+    Each entry describes an ICD-10 code that is incompatible with a set of
+    procedure codes, along with the finding metadata.
+    """
+    return [
+        {
+            "icd10": "Z00.00",
+            "incompatible_cpt_codes": list(_PROBLEM_EM_CODES),
+            "severity": "HIGH",
+            "issue_template": (
+                "{icd10} (routine exam, no abnormal findings) conflicts with "
+                "problem-oriented E/M code {cpt}"
+            ),
+            "recommendation": (
+                "Use the appropriate preventive visit code (e.g. 99395–99397), "
+                "or add a specific problem diagnosis if the provider addressed a "
+                "separate condition and the documentation supports it."
+            ),
+            "citation": "ICD-10-CM Z00.00 usage notes, synthetic sample",
+            "confidence": 0.90,
+        },
+    ]
+
+
+def _load_modifier_rules() -> list[dict]:
+    """
+    Returns modifier-presence rules.
+
+    Each entry describes a condition under which a modifier is expected, and
+    what finding to raise when it is absent.
+    """
+    return [
+        {
+            "rule_id": "missing_modifier_25",
+            "description": (
+                "A problem-oriented E/M billed alongside a preventive-visit "
+                "diagnosis requires modifier 25 to establish that a separately "
+                "identifiable E/M service occurred on the same date."
+            ),
+            "required_modifier": "25",
+            "trigger_cpt_codes": list(_PROBLEM_EM_CODES),
+            "trigger_dx_prefixes": list(_PREVENTIVE_DX_PREFIXES),
+            "severity": "MEDIUM",
+            "recommendation": (
+                "Add modifier 25 to the E/M code only if a separately "
+                "identifiable E/M service was documented beyond the preventive visit."
+            ),
+            "citation": "NCCI Policy Manual, modifier 25 guidance, synthetic sample",
+            "confidence": 0.75,
+        },
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _has_preventive_dx(claim: ClaimIn, prefixes: list) -> bool:
+    return any(
+        dx.startswith(prefix)
+        for dx in claim.icd10_codes
+        for prefix in prefixes
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public interface
+# ---------------------------------------------------------------------------
+
+def check_code_validity(claim: ClaimIn) -> list[Finding]:
+    """
+    Return Findings for:
+      1. Diagnosis-to-procedure conflicts (dx does not support the billed E/M).
+      2. Missing modifier situations (problem E/M in preventive-visit context
+         without modifier 25).
+    """
+    findings = []
+    code_set = set(claim.cpt_codes)
+
+    # --- Dx-to-procedure conflict checks ---
+    for rule in _load_dx_procedure_rules():
+        if rule["icd10"] not in claim.icd10_codes:
+            continue
+        for cpt in rule["incompatible_cpt_codes"]:
+            if cpt not in code_set:
+                continue
+            findings.append(Finding(
+                rule="dx_procedure_conflict",
+                severity=rule["severity"],
+                issue=rule["issue_template"].format(icd10=rule["icd10"], cpt=cpt),
+                recommendation=rule["recommendation"],
+                citation=rule["citation"],
+                confidence=rule["confidence"],
+            ))
+
+    # --- Missing modifier checks ---
+    for rule in _load_modifier_rules():
+        has_trigger_cpt = bool(code_set & set(rule["trigger_cpt_codes"]))
+        has_trigger_dx = _has_preventive_dx(claim, rule["trigger_dx_prefixes"])
+        has_modifier = rule["required_modifier"] in claim.modifiers
+
+        if has_trigger_cpt and has_trigger_dx and not has_modifier:
+            trigger_cpt = next(c for c in claim.cpt_codes if c in set(rule["trigger_cpt_codes"]))
+            findings.append(Finding(
+                rule=rule["rule_id"],
+                severity=rule["severity"],
+                issue=(
+                    f"Possible missing modifier {rule['required_modifier']}: "
+                    f"{trigger_cpt} billed in preventive-visit context without "
+                    f"modifier {rule['required_modifier']}"
+                ),
+                recommendation=rule["recommendation"],
+                citation=rule["citation"],
+                confidence=rule["confidence"],
+            ))
+
+    return findings
