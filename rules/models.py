@@ -1,15 +1,31 @@
 """
 Shared data models for the rule layer.
 
-ClaimIn is the input contract for all rule functions.
-Finding is the output contract — every rule returns a list of these.
+ClaimIn    — input contract for all rule functions.
+Citation   — structured source metadata attached to every finding.
+Finding    — output contract; every rule returns a list of these.
 
-Both are plain dataclasses (no external dependencies) so they can be
+All three are plain dataclasses (no external dependencies) so they can be
 imported by rule modules, the rule engine, the UI, and tests without
-pulling in the full agent/DB stack.
+pulling in the full agent or DB stack.
+
+Citation design notes
+---------------------
+The flat citation string used in Sprint 1 could not map cleanly to the
+three-column DB schema (citation_doc_id, citation_section, citation_effective_date)
+or to the source-excerpt display required by the PRD.  Citation is now a
+first-class dataclass with one field per intended DB column plus an optional
+excerpt for inline display.
+
+When real CMS data files are loaded, `doc_id` becomes the versioned filename
+(e.g. "NCCI-PTP-2026Q1"), `edition` becomes the quarter/year, and
+`effective_date` is read from the file header.
 """
 
-from dataclasses import dataclass, field
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal, Optional
 
 
 @dataclass
@@ -27,10 +43,22 @@ class ClaimIn:
 
 
 @dataclass
+class Citation:
+    source: str                         # human label: "NCCI PTP", "ICD-10-CM", etc.
+    doc_id: str                         # stable document identifier for DB storage
+    section: str                        # table, chapter, or policy section cited
+    edition: str                        # version consulted: quarter, FY, or "synthetic sample"
+    effective_date: Optional[str] = None  # ISO-8601 date when this rule took effect
+    excerpt: Optional[str] = None        # verbatim source text, shown inline in UI
+
+
+@dataclass
 class Finding:
-    rule: str           # machine-readable rule identifier
-    severity: str       # "HIGH" | "MEDIUM" | "LOW"
-    issue: str          # short human-readable description of the problem
-    recommendation: str # what the specialist should do
-    citation: str       # source policy or edit table reference
-    confidence: float   # 0.0–1.0; drives escalation threshold in future agent layer
+    rule: str                                    # machine-readable rule identifier
+    severity: Literal["HIGH", "MEDIUM", "LOW"]   # validated type; enforced by type checker
+    issue: str                                   # short human-readable problem description
+    recommendation: str                          # what the specialist should do
+    citation: Citation                           # structured source reference
+    confidence: float                            # 0.0–1.0; drives escalation in agent layer
+    finding_id: str = ""                         # set by rule_engine after creation; empty until stamped
+    source: str = "rule_layer"                   # "rule_layer" | "agent_layer"

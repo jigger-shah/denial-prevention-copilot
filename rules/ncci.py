@@ -12,7 +12,7 @@ Modifier indicator values:
   9 = not applicable
 """
 
-from rules.models import ClaimIn, Finding
+from rules.models import Citation, ClaimIn, Finding
 
 
 # ---------------------------------------------------------------------------
@@ -24,17 +24,21 @@ def _load_ptp_edits() -> list[dict]:
     Returns PTP edit rules as a list of dicts.
 
     Each entry represents one CMS NCCI PTP edit pair:
-      col1: comprehensive (column 1) code
-      col2: component (column 2) code — the one to remove
+      col1:               comprehensive (column 1) code
+      col2:               component (column 2) code — the one to remove
       modifier_indicator: 0 | 1 | 9
-      edition: data version for citation (quarter string in production)
+      doc_id:             versioned document identifier (quarter string in production)
+      edition:            human-readable version label
+      effective_date:     ISO date when this edit became effective (None for synthetic)
     """
     return [
         {
             "col1": "80053",
             "col2": "80048",
             "modifier_indicator": 0,
+            "doc_id": "NCCI-PTP-SYNTHETIC",
             "edition": "synthetic sample",
+            "effective_date": None,
         },
     ]
 
@@ -64,7 +68,10 @@ def check_ncci_pairs(claim: ClaimIn) -> list[Finding]:
         if edit["modifier_indicator"] == 0:
             bypass_note = "No modifier bypass is allowed for this pair."
         elif edit["modifier_indicator"] == 1:
-            bypass_note = "A modifier may allow separate billing if clinically appropriate — confirm before adding."
+            bypass_note = (
+                "A modifier may allow separate billing if clinically "
+                "appropriate — confirm before adding."
+            )
         else:
             bypass_note = ""
 
@@ -75,7 +82,17 @@ def check_ncci_pairs(claim: ClaimIn) -> list[Finding]:
             recommendation=(
                 f"Remove {col2} when billed with {col1}. {bypass_note}"
             ).strip(),
-            citation=f"NCCI PTP edit table, {edit['edition']}",
+            citation=Citation(
+                source="NCCI PTP",
+                doc_id=edit["doc_id"],
+                section="Physician/Practitioner PTP edit table, Column 1 / Column 2",
+                edition=edit["edition"],
+                effective_date=edit["effective_date"],
+                excerpt=(
+                    f"{col1} (col 1) / {col2} (col 2) — "
+                    f"modifier indicator {edit['modifier_indicator']}"
+                ),
+            ),
             confidence=0.95,
         ))
 

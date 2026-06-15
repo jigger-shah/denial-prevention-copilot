@@ -8,7 +8,7 @@ with the NCCI Policy Manual modifier guidance.
 The public interface (check_code_validity) stays the same.
 """
 
-from rules.models import ClaimIn, Finding
+from rules.models import Citation, ClaimIn, Finding
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ def _load_dx_procedure_rules() -> list[dict]:
     Returns diagnosis-to-procedure conflict rules.
 
     Each entry describes an ICD-10 code that is incompatible with a set of
-    procedure codes, along with the finding metadata.
+    procedure codes, along with finding metadata and structured citation fields.
     """
     return [
         {
@@ -50,8 +50,18 @@ def _load_dx_procedure_rules() -> list[dict]:
                 "or add a specific problem diagnosis if the provider addressed a "
                 "separate condition and the documentation supports it."
             ),
-            "citation": "ICD-10-CM Z00.00 usage notes, synthetic sample",
             "confidence": 0.90,
+            # Citation fields
+            "citation_source": "ICD-10-CM",
+            "citation_doc_id": "ICD10CM-FY2026",
+            "citation_section": "Z00.00 coding guidelines and usage notes",
+            "citation_edition": "synthetic sample",
+            "citation_effective_date": None,
+            "citation_excerpt": (
+                "Z00.00 — Encounter for general adult medical examination without "
+                "abnormal findings. Use additional code to identify any "
+                "abnormal findings."
+            ),
         },
     ]
 
@@ -79,8 +89,18 @@ def _load_modifier_rules() -> list[dict]:
                 "Add modifier 25 to the E/M code only if a separately "
                 "identifiable E/M service was documented beyond the preventive visit."
             ),
-            "citation": "NCCI Policy Manual, modifier 25 guidance, synthetic sample",
             "confidence": 0.75,
+            # Citation fields
+            "citation_source": "NCCI Policy Manual",
+            "citation_doc_id": "NCCI-POLICY-MANUAL",
+            "citation_section": "Chapter 1, Modifier 25 — Significant, Separately Identifiable E/M Service",
+            "citation_edition": "synthetic sample",
+            "citation_effective_date": None,
+            "citation_excerpt": (
+                "Modifier 25 should be appended to the E/M service code to indicate "
+                "that on the day of a procedure or service, the patient's condition "
+                "required a significant, separately identifiable E/M service."
+            ),
         },
     ]
 
@@ -94,6 +114,18 @@ def _has_preventive_dx(claim: ClaimIn, prefixes: list) -> bool:
         dx.startswith(prefix)
         for dx in claim.icd10_codes
         for prefix in prefixes
+    )
+
+
+def _citation_from_rule(rule: dict) -> Citation:
+    """Build a Citation from the structured citation fields in a rule dict."""
+    return Citation(
+        source=rule["citation_source"],
+        doc_id=rule["citation_doc_id"],
+        section=rule["citation_section"],
+        edition=rule["citation_edition"],
+        effective_date=rule.get("citation_effective_date"),
+        excerpt=rule.get("citation_excerpt"),
     )
 
 
@@ -123,7 +155,7 @@ def check_code_validity(claim: ClaimIn) -> list[Finding]:
                 severity=rule["severity"],
                 issue=rule["issue_template"].format(icd10=rule["icd10"], cpt=cpt),
                 recommendation=rule["recommendation"],
-                citation=rule["citation"],
+                citation=_citation_from_rule(rule),
                 confidence=rule["confidence"],
             ))
 
@@ -134,7 +166,9 @@ def check_code_validity(claim: ClaimIn) -> list[Finding]:
         has_modifier = rule["required_modifier"] in claim.modifiers
 
         if has_trigger_cpt and has_trigger_dx and not has_modifier:
-            trigger_cpt = next(c for c in claim.cpt_codes if c in set(rule["trigger_cpt_codes"]))
+            trigger_cpt = next(
+                c for c in claim.cpt_codes if c in set(rule["trigger_cpt_codes"])
+            )
             findings.append(Finding(
                 rule=rule["rule_id"],
                 severity=rule["severity"],
@@ -144,7 +178,7 @@ def check_code_validity(claim: ClaimIn) -> list[Finding]:
                     f"modifier {rule['required_modifier']}"
                 ),
                 recommendation=rule["recommendation"],
-                citation=rule["citation"],
+                citation=_citation_from_rule(rule),
                 confidence=rule["confidence"],
             ))
 

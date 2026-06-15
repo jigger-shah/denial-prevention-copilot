@@ -8,11 +8,25 @@ When the agent layer is added in a later sprint, the orchestrator will call
 this module first (deterministic checks) before dispatching agents.
 """
 
+import hashlib
+
 from rules.models import ClaimIn, Finding
 from rules import ncci, code_validity
 
 
 _SEVERITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+
+
+def _make_finding_id(claim_id: str, rule: str, issue: str) -> str:
+    """
+    Deterministic, stable finding identifier derived from claim + rule + issue.
+
+    SHA-256 is used (not Python's built-in hash()) so the ID is identical
+    across processes and interpreter restarts — a requirement for the audit
+    log's foreign key from decisions → findings.
+    """
+    key = f"{claim_id}:{rule}:{issue}"
+    return hashlib.sha256(key.encode()).hexdigest()[:12]
 
 
 def load_claim(claim_dict: dict) -> ClaimIn:
@@ -37,11 +51,18 @@ def review_claim(claim: ClaimIn) -> list[Finding]:
 
     Adding a new rule module: import it above and append its checker call here.
     The interface contract is: checker(claim: ClaimIn) -> list[Finding].
+
+    finding_id is stamped here (not in rule modules) because it requires claim_id,
+    which rule modules do not need to know about.
     """
     findings: list[Finding] = []
     findings.extend(ncci.check_ncci_pairs(claim))
     findings.extend(code_validity.check_code_validity(claim))
     findings.sort(key=lambda f: _SEVERITY_ORDER.get(f.severity, 9))
+
+    for finding in findings:
+        finding.finding_id = _make_finding_id(claim.claim_id, finding.rule, finding.issue)
+
     return findings
 
 

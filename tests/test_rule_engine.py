@@ -173,3 +173,107 @@ def test_overall_risk_high_when_any_high():
 
 def test_overall_risk_clean_when_no_findings():
     assert overall_risk([]) == "CLEAN"
+
+
+# ---------------------------------------------------------------------------
+# Finding structure — finding_id, source, Citation
+# ---------------------------------------------------------------------------
+
+def test_every_finding_has_nonempty_finding_id():
+    """rule_engine must stamp a non-empty finding_id on every finding."""
+    claim = load_claim(_make_claim(
+        cpt_codes=["99214", "80053", "80048"],
+        icd10_codes=["Z00.00"],
+    ))
+    findings = review_claim(claim)
+    assert findings, "Expected at least one finding for this claim"
+    for f in findings:
+        assert f.finding_id, f"finding_id is empty for rule='{f.rule}'"
+
+
+def test_finding_ids_are_unique_within_a_claim():
+    """Multiple findings on the same claim must each have a distinct finding_id."""
+    claim = load_claim(_make_claim(
+        cpt_codes=["99214", "80053", "80048"],
+        icd10_codes=["Z00.00"],
+    ))
+    findings = review_claim(claim)
+    ids = [f.finding_id for f in findings]
+    assert len(ids) == len(set(ids)), f"Duplicate finding_ids: {ids}"
+
+
+def test_finding_id_is_stable_across_calls():
+    """Same claim + rule + issue must always produce the same finding_id."""
+    claim_dict = _make_claim(cpt_codes=["80053", "80048"], icd10_codes=["I10"])
+    run1 = review_claim(load_claim(claim_dict))
+    run2 = review_claim(load_claim(claim_dict))
+    assert run1[0].finding_id == run2[0].finding_id, (
+        "finding_id changed between calls for the same input"
+    )
+
+
+def test_every_finding_source_is_rule_layer():
+    """All Sprint 1 findings must carry source='rule_layer'."""
+    claim = load_claim(_make_claim(
+        cpt_codes=["99214", "80053", "80048"],
+        icd10_codes=["Z00.00"],
+    ))
+    findings = review_claim(claim)
+    for f in findings:
+        assert f.source == "rule_layer", (
+            f"Expected source='rule_layer', got '{f.source}' for rule='{f.rule}'"
+        )
+
+
+def test_every_finding_has_structured_citation():
+    """Citation must be a Citation object with all required fields populated."""
+    from rules.models import Citation
+    claim = load_claim(_make_claim(
+        cpt_codes=["99214", "80053", "80048"],
+        icd10_codes=["Z00.00"],
+    ))
+    findings = review_claim(claim)
+    for f in findings:
+        assert isinstance(f.citation, Citation), (
+            f"citation is not a Citation object for rule='{f.rule}'"
+        )
+        assert f.citation.source, f"citation.source is empty for rule='{f.rule}'"
+        assert f.citation.doc_id, f"citation.doc_id is empty for rule='{f.rule}'"
+        assert f.citation.section, f"citation.section is empty for rule='{f.rule}'"
+        assert f.citation.edition, f"citation.edition is empty for rule='{f.rule}'"
+
+
+def test_ncci_citation_has_excerpt():
+    """NCCI findings should include an excerpt identifying the edit pair."""
+    claim = load_claim(_make_claim(
+        cpt_codes=["80053", "80048"],
+        icd10_codes=["I10"],
+    ))
+    findings = review_claim(claim)
+    ncci_finding = next(f for f in findings if f.rule == "ncci_ptp")
+    assert ncci_finding.citation.excerpt, "NCCI finding should have a citation excerpt"
+    assert "80053" in ncci_finding.citation.excerpt
+    assert "80048" in ncci_finding.citation.excerpt
+
+
+def test_dx_conflict_citation_source_is_icd10():
+    """Dx-procedure conflict findings must cite ICD-10-CM."""
+    claim = load_claim(_make_claim(
+        cpt_codes=["99214"],
+        icd10_codes=["Z00.00"],
+    ))
+    findings = review_claim(claim)
+    dx_finding = next(f for f in findings if f.rule == "dx_procedure_conflict")
+    assert dx_finding.citation.source == "ICD-10-CM"
+
+
+def test_modifier_finding_citation_source_is_ncci_policy():
+    """Missing-modifier findings must cite the NCCI Policy Manual."""
+    claim = load_claim(_make_claim(
+        cpt_codes=["99214"],
+        icd10_codes=["Z00.00"],
+        modifiers=[],
+    ))
+    findings = review_claim(claim)
+    mod_finding = next(f for f in findings if f.rule == "missing_modifier_25")
+    assert mod_finding.citation.source == "NCCI Policy Manual"

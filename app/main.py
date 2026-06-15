@@ -65,7 +65,18 @@ def _severity_badge(severity: str) -> str:
     )
 
 
-def _finding_card(index: int, finding) -> None:
+def _citation_caption(citation) -> str:
+    """Build a one-line citation string from a structured Citation object."""
+    text = f"{citation.source} — {citation.section}"
+    if citation.edition:
+        text += f" ({citation.edition})"
+    if citation.effective_date:
+        text += f" · effective {citation.effective_date}"
+    return text
+
+
+def _finding_card(finding) -> None:
+    fid = finding.finding_id
     style = _SEVERITY_STYLE.get(finding.severity, {"border": "#6b7280", "card_bg": "#f9fafb"})
 
     st.markdown(
@@ -84,22 +95,30 @@ def _finding_card(index: int, finding) -> None:
         with col_detail:
             st.write(f"**Recommendation:** {finding.recommendation}")
             st.caption(
-                f"Citation: {finding.citation} &nbsp;|&nbsp; "
+                f"Citation: {_citation_caption(finding.citation)} &nbsp;|&nbsp; "
                 f"Confidence: {finding.confidence:.0%}"
             )
+            if finding.citation.excerpt:
+                with st.expander("View source excerpt"):
+                    st.markdown(
+                        f'<div style="font-size:0.85rem;color:#374151;'
+                        f'font-style:italic;padding:4px 0;">'
+                        f'"{finding.citation.excerpt}"</div>',
+                        unsafe_allow_html=True,
+                    )
 
         with col_action:
-            decision_key = f"decision_{index}"
-            reason_key = f"reason_{index}"
+            decision_key = f"decision_{fid}"
+            reason_key = f"reason_{fid}"
 
             decision = st.session_state.get(decision_key)
 
             if decision is None:
                 btn_col1, btn_col2 = st.columns(2)
-                if btn_col1.button("✓ Accept", key=f"accept_{index}", use_container_width=True):
+                if btn_col1.button("✓ Accept", key=f"accept_{fid}", use_container_width=True):
                     st.session_state[decision_key] = "accepted"
                     st.rerun()
-                if btn_col2.button("✗ Override", key=f"override_{index}", use_container_width=True):
+                if btn_col2.button("✗ Override", key=f"override_{fid}", use_container_width=True):
                     st.session_state[decision_key] = "override_pending"
                     st.rerun()
 
@@ -110,7 +129,7 @@ def _finding_card(index: int, finding) -> None:
                     height=80,
                     placeholder="Explain why you are overriding this finding…",
                 )
-                if st.button("Confirm", key=f"confirm_{index}"):
+                if st.button("Confirm", key=f"confirm_{fid}"):
                     if reason.strip():
                         st.session_state[decision_key] = "overridden"
                         st.rerun()
@@ -122,7 +141,7 @@ def _finding_card(index: int, finding) -> None:
 
             elif decision == "overridden":
                 stored_reason = st.session_state.get(reason_key, "")
-                st.warning(f"⚠ Overridden")
+                st.warning("⚠ Overridden")
                 if stored_reason:
                     st.caption(f"Reason: {stored_reason}")
 
@@ -206,8 +225,8 @@ def main() -> None:
             st.write("Checks run: " + ", ".join(checks))
         else:
             st.subheader(f"Findings ({len(findings)})")
-            for i, finding in enumerate(findings):
-                _finding_card(i, finding)
+            for finding in findings:
+                _finding_card(finding)
 
 
 if __name__ == "__main__":
