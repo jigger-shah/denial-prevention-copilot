@@ -396,6 +396,45 @@ These are the points in the current implementation where production deployment w
 
 ---
 
+## ADR-009: Local Policy Reference Dataset Before CMS API Integration
+
+**Status:** Decided — implemented  
+**Decided:** Sprint 3
+
+### Context
+
+The app's citation detail view displays structured policy references (title, section, edition, effective_date, excerpt, source_url) for each finding. In Sprint 1–2, citation fields were populated inline in each rule module using synthetic placeholder strings. The Citation dataclass existed, but the data behind it was not traceable to any real reference source, making the citation detail view feel hollow.
+
+The full production path for policy references — fetching LCD/NCD documents from the CMS MCD API, section-aware chunking, and ChromaDB vector indexing — is a multi-sprint effort that depends on the agent layer, which is not yet built.
+
+### Decision
+
+Sprint 3 introduced a curated JSON dataset (`data/reference/policy_examples.json`) with 5 public-policy-style reference entries and a read-only repository service (`retrieval/policy_repository.py`) that provides structured lookups by document_id and by code set. Rule modules were updated to reference document IDs from this dataset. The Streamlit UI was updated to enrich citation cards with title, source URL, and notes pulled from the repository.
+
+### Rationale
+
+**Evidence-backed feel without premature complexity.** The app can now show a coherent "View policy detail" panel with real field values, CMS source URLs, and policy-level excerpts — without any LLM, vector store, or live API.
+
+**Same interface, different backing.** `retrieval/policy_repository.py` exposes `load_policy_references()`, `find_policy_by_document_id()`, `find_policies_by_codes()`, and `get_citation_detail()`. When the RAG pipeline is built, `_load_policy_references()` is replaced with a ChromaDB query; the public interface stays the same.
+
+**Citation integrity.** `doc_id` values in rule modules now reference entries in `policy_examples.json`. Tests verify that every finding's `citation.doc_id` resolves to a policy entry — meaning the connection between a rule finding and its policy source is verified at test time, not just assumed.
+
+**Schema stability.** The `Citation` dataclass is unchanged. No new fields were added to `Finding`. The policy repository is an additive enrichment layer, not a schema change.
+
+### Alternatives considered
+
+| Option | Reason not chosen |
+|---|---|
+| Keep synthetic strings, add detail view later | Detail view without real content is meaningless at demo time; cost of deferring was higher than cost of the JSON dataset |
+| Build ChromaDB pipeline now | Requires agent layer, LCD/NCD ingestion, and vector store infrastructure — all out of scope for Sprint 3 |
+| Embed all policy metadata in rule module dicts | Creates a second source of truth when the real pipeline lands; harder to replace |
+
+### Production replacement
+
+Replace `_load_policy_references()` in `retrieval/policy_repository.py` with a ChromaDB query after `retrieval/ingest.py` and `retrieval/vector_store.py` are implemented. The public interface (`find_policy_by_document_id`, `find_policies_by_codes`, `get_citation_detail`) stays unchanged. The JSON file can be removed once the vector store is seeded.
+
+---
+
 ## Tradeoffs Summary
 
 | Decision | Speed | Correctness | Explainability | Future-Proofing |
@@ -408,3 +447,4 @@ These are the points in the current implementation where production deployment w
 | Repository pattern | ➖ More code | ✅ Testable, consistent | ✅ One validation path | ✅ DB swap is contained |
 | Widget key split | ➖ Two keys to manage | ✅ State survives rerender | — | ✅ Pattern reusable |
 | Narrow audit scope | ✅ Ships sooner | ➖ Incomplete schema | — | ✅ No dead tables |
+| Local policy JSON | ✅ No infra required | ➖ Curated, not comprehensive | ✅ Real source URLs shown | ✅ Same interface as future ChromaDB |

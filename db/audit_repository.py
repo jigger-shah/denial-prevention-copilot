@@ -24,34 +24,42 @@ DB_PATH = pathlib.Path(__file__).parent / "audit.db"
 
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS audit_decisions (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp        TEXT    NOT NULL,
-    claim_id         TEXT    NOT NULL,
-    finding_id       TEXT    NOT NULL,
-    source           TEXT    NOT NULL,
-    severity         TEXT    NOT NULL,
-    issue            TEXT    NOT NULL,
-    recommendation   TEXT    NOT NULL,
-    citation_source  TEXT    NOT NULL,
-    citation_doc_id  TEXT    NOT NULL,
-    citation_section TEXT    NOT NULL,
-    citation_edition TEXT    NOT NULL,
-    confidence       REAL    NOT NULL,
-    user_decision    TEXT    NOT NULL,
-    override_reason  TEXT    NOT NULL DEFAULT '',
-    reviewer_name    TEXT    NOT NULL,
-    model_version    TEXT    NOT NULL,
-    prompt_version   TEXT    NOT NULL
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp                TEXT    NOT NULL,
+    claim_id                 TEXT    NOT NULL,
+    finding_id               TEXT    NOT NULL,
+    source                   TEXT    NOT NULL,
+    severity                 TEXT    NOT NULL,
+    issue                    TEXT    NOT NULL,
+    recommendation           TEXT    NOT NULL,
+    citation_source          TEXT    NOT NULL,
+    citation_doc_id          TEXT    NOT NULL,
+    citation_section         TEXT    NOT NULL,
+    citation_edition         TEXT    NOT NULL,
+    citation_effective_date  TEXT,
+    confidence               REAL    NOT NULL,
+    user_decision            TEXT    NOT NULL,
+    override_reason          TEXT    NOT NULL DEFAULT '',
+    reviewer_name            TEXT    NOT NULL,
+    model_version            TEXT    NOT NULL,
+    prompt_version           TEXT    NOT NULL
 );
+"""
+
+# Backward-compatible migration: add citation_effective_date to existing databases
+# that were created before Sprint 3. ALTER TABLE ADD COLUMN in SQLite is safe —
+# it never destroys existing rows and defaults the new column to NULL.
+_MIGRATE_ADD_EFFECTIVE_DATE_SQL = """
+ALTER TABLE audit_decisions ADD COLUMN citation_effective_date TEXT;
 """
 
 _INSERT_SQL = """
 INSERT INTO audit_decisions (
     timestamp, claim_id, finding_id, source, severity, issue,
     recommendation, citation_source, citation_doc_id, citation_section,
-    citation_edition, confidence, user_decision, override_reason,
-    reviewer_name, model_version, prompt_version
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    citation_edition, citation_effective_date, confidence, user_decision,
+    override_reason, reviewer_name, model_version, prompt_version
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 
@@ -74,6 +82,7 @@ class AuditDecision:
     reviewer_name: str
     model_version: str
     prompt_version: str
+    citation_effective_date: Optional[str] = None
     id: Optional[int] = None
     timestamp: Optional[str] = None
 
@@ -86,10 +95,16 @@ class AuditRepository:
         return sqlite3.connect(self._db_path)
 
     def initialize_database(self) -> None:
-        """Create the audit_decisions table if it does not exist."""
+        """Create the audit_decisions table if it does not exist, and apply migrations."""
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.execute(_CREATE_TABLE_SQL)
+            # Sprint 3 migration: add citation_effective_date to existing DBs.
+            # SQLite raises OperationalError if the column already exists; ignore it.
+            try:
+                conn.execute(_MIGRATE_ADD_EFFECTIVE_DATE_SQL)
+            except Exception:
+                pass
             conn.commit()
 
     def save_decision(self, decision: AuditDecision) -> int:
@@ -124,6 +139,7 @@ class AuditRepository:
                     decision.citation_doc_id,
                     decision.citation_section,
                     decision.citation_edition,
+                    decision.citation_effective_date,
                     decision.confidence,
                     decision.user_decision,
                     decision.override_reason,

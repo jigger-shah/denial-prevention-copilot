@@ -2,7 +2,7 @@
 ## Denial Prevention Copilot
 
 **Last updated:** June 2026  
-**Scope:** All known technical debt as of commit `ee45738`
+**Scope:** All known technical debt as of Sprint 3 (policy intelligence foundation)
 
 Priority definitions:
 - **High** — blocks a P0 PRD requirement, a core demo scenario, or correct audit behavior
@@ -11,7 +11,9 @@ Priority definitions:
 
 ---
 
-## Resolved Debt (Completed Before or During Sprint 2)
+## Resolved Debt
+
+### Resolved Before or During Sprint 2
 
 These items were identified before audit logging was implemented and resolved in the pre-audit model refactor.
 
@@ -22,6 +24,14 @@ These items were identified before audit logging was implemented and resolved in
 | ~~TD-R3~~ | Session state keys were positional (`decision_0`, `reason_0`) | Re-keyed to `decision_{finding_id}` — content-based, order-stable |
 | ~~TD-R4~~ | Widget key reused as persistent storage slot for override reason | Split into `reason_input_{fid}` (widget) and `reason_{fid}` (storage) |
 | ~~TD-R5~~ | No `source` field on `Finding` to distinguish rule vs. agent origin | Added `source: str = "rule_layer"` to `Finding` dataclass |
+
+### Resolved in Sprint 3
+
+| ID | Description | Resolution |
+|---|---|---|
+| ~~TD-R6~~ | Citation `doc_id` values were opaque synthetic strings (`"NCCI-PTP-SYNTHETIC"`, `"ICD10CM-FY2026"`, `"NCCI-POLICY-MANUAL"`) not traceable to any real document | Updated to stable, versioned doc_ids (`NCCI_PTP_80048_80053_SAMPLE` etc.) keyed to `policy_examples.json` entries |
+| ~~TD-R7~~ | Citation detail view (excerpt only) had no policy title, source URL, or notes | Added `retrieval/policy_repository.py` and enriched `_render_citation_detail()` in `app/main.py` |
+| ~~TD-R8~~ | `audit_decisions` table had no `citation_effective_date` column; effective dates in `Citation` were not persisted | Added column with backward-compatible `ALTER TABLE` migration in `initialize_database()` |
 
 ---
 
@@ -394,7 +404,11 @@ Add this check gated on whether agents are enabled, so it does not block the cur
 | High | 11 | 5 | 6 |
 | Medium | 6 | 0 | 6 |
 | Low | 5 | 0 | 5 |
-| **Total** | **22** | **5** | **17** |
+| Sprint 3 additions | 3 | 3 | 0 |
+| **Total** | **25** | **8** | **17** |
 
-The 5 resolved items (R1–R5) were addressed in the pre-audit model refactor and Sprint 2.  
+Items R1–R5 were addressed in the pre-audit model refactor and Sprint 2.  
+Items R6–R8 were addressed in Sprint 3 (policy intelligence foundation).  
 The 6 open High items (TD-01 through TD-06) represent the core gap between current state and a complete MVP.
+
+**Sprint 3 note:** Local policy intelligence was introduced using curated public-policy-style references (`data/reference/policy_examples.json`). This makes the citation detail view evidence-backed without requiring CMS API automation, Chroma, or LLM calls. Real CMS/NCCI/LCD/NCD ingestion remains a future replacement point — `retrieval/policy_repository.py` is designed with the same public interface the ChromaDB-backed version will implement.

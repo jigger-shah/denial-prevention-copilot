@@ -53,14 +53,15 @@ def _load_dx_procedure_rules() -> list[dict]:
             "confidence": 0.90,
             # Citation fields
             "citation_source": "ICD-10-CM",
-            "citation_doc_id": "ICD10CM-FY2026",
-            "citation_section": "Z00.00 coding guidelines and usage notes",
-            "citation_edition": "synthetic sample",
-            "citation_effective_date": None,
+            "citation_doc_id": "ICD10_Z00_PREVENTIVE_CONTEXT_SAMPLE",
+            "citation_section": "ICD-10-CM Official Guidelines for Coding and Reporting, Section I.C.21.c — Factors Influencing Health Status (Z Codes)",
+            "citation_edition": "ICD-10-CM FY2026 (sample reference)",
+            "citation_effective_date": "2025-10-01",
             "citation_excerpt": (
-                "Z00.00 — Encounter for general adult medical examination without "
-                "abnormal findings. Use additional code to identify any "
-                "abnormal findings."
+                "Z00.00: Encounter for general adult medical examination without abnormal findings. "
+                "Problem-oriented E/M codes (99202–99215) are not appropriate as the primary code "
+                "when the encounter is a routine preventive examination unless a separately "
+                "identifiable service is documented."
             ),
         },
     ]
@@ -92,14 +93,16 @@ def _load_modifier_rules() -> list[dict]:
             "confidence": 0.75,
             # Citation fields
             "citation_source": "NCCI Policy Manual",
-            "citation_doc_id": "NCCI-POLICY-MANUAL",
-            "citation_section": "Chapter 1, Modifier 25 — Significant, Separately Identifiable E/M Service",
-            "citation_edition": "synthetic sample",
-            "citation_effective_date": None,
+            "citation_doc_id": "NCCI_MODIFIER_25_SAMPLE",
+            "citation_section": "Chapter 1, Section D — Modifiers",
+            "citation_edition": "NCCI Policy Manual for Medicare Services, effective January 2024 (sample reference)",
+            "citation_effective_date": "2024-01-01",
             "citation_excerpt": (
-                "Modifier 25 should be appended to the E/M service code to indicate "
-                "that on the day of a procedure or service, the patient's condition "
-                "required a significant, separately identifiable E/M service."
+                "Modifier 25 should be appended to an E/M service code to indicate that on the day "
+                "of a procedure or service, the patient's condition required a significant, separately "
+                "identifiable E/M service above and beyond the usual pre- and post-operative care. "
+                "The E/M service must be documented separately and must meet the criteria for the "
+                "level of service billed."
             ),
         },
     ]

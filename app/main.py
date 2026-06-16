@@ -30,6 +30,7 @@ import streamlit as st
 
 from rules.rule_engine import load_claim, review_claim, overall_risk
 from db.audit_repository import AuditDecision, AuditRepository
+from retrieval.policy_repository import get_citation_detail
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -94,6 +95,39 @@ def _citation_caption(citation) -> str:
     return text
 
 
+def _render_citation_detail(citation) -> None:
+    """Render the full policy detail view for a Citation inside an expander."""
+    policy = get_citation_detail(citation)
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown(f"**Source:** {citation.source}")
+        st.markdown(f"**Document ID:** `{citation.doc_id}`")
+        st.markdown(f"**Section:** {citation.section}")
+    with col_b:
+        st.markdown(f"**Edition:** {citation.edition}")
+        if citation.effective_date:
+            st.markdown(f"**Effective date:** {citation.effective_date}")
+
+    if policy:
+        st.markdown(f"**Title:** {policy['title']}")
+        if policy.get("source_url"):
+            st.markdown(f"**Reference:** [{policy['source_url']}]({policy['source_url']})")
+
+    if citation.excerpt:
+        st.markdown("**Policy excerpt:**")
+        st.markdown(
+            f'<div style="font-size:0.85rem;color:#374151;font-style:italic;'
+            f'padding:6px 10px;background:#f9fafb;border-left:3px solid #d1d5db;'
+            f'border-radius:0 4px 4px 0;margin-top:4px;">'
+            f'"{citation.excerpt}"</div>',
+            unsafe_allow_html=True,
+        )
+
+    if policy and policy.get("notes"):
+        st.caption(f"Notes: {policy['notes']}")
+
+
 def _finding_card(finding, claim_id: str, reviewer_name: str, repo: AuditRepository) -> None:
     fid = finding.finding_id
     style = _SEVERITY_STYLE.get(finding.severity, {"border": "#6b7280", "card_bg": "#f9fafb"})
@@ -119,14 +153,8 @@ def _finding_card(finding, claim_id: str, reviewer_name: str, repo: AuditReposit
             )
             if finding.confidence < CONFIDENCE_REVIEW_THRESHOLD:
                 st.caption("⚠️ **Manual Review Recommended** — confidence below 70%")
-            if finding.citation.excerpt:
-                with st.expander("View source excerpt"):
-                    st.markdown(
-                        f'<div style="font-size:0.85rem;color:#374151;'
-                        f'font-style:italic;padding:4px 0;">'
-                        f'"{finding.citation.excerpt}"</div>',
-                        unsafe_allow_html=True,
-                    )
+            with st.expander("📄 View policy detail"):
+                _render_citation_detail(finding.citation)
 
         with col_action:
             decision_key = f"decision_{fid}"
@@ -212,6 +240,7 @@ def _save_controls(
             citation_doc_id=finding.citation.doc_id,
             citation_section=finding.citation.section,
             citation_edition=finding.citation.edition,
+            citation_effective_date=finding.citation.effective_date,
             confidence=finding.confidence,
             user_decision=user_decision,
             override_reason=st.session_state.get(reason_key, ""),
@@ -261,7 +290,7 @@ def _render_audit_trail(repo: AuditRepository) -> None:
     display_cols = [
         "timestamp", "claim_id", "finding_id", "severity", "user_decision",
         "reviewer_name", "confidence", "issue", "override_reason",
-        "citation_source", "citation_section",
+        "citation_source", "citation_doc_id", "citation_section", "citation_effective_date",
     ]
     display_cols = [c for c in display_cols if c in df.columns]
     st.dataframe(df[display_cols], use_container_width=True)

@@ -123,6 +123,38 @@ Implement the complete human decision workflow and append-only audit persistence
 
 ---
 
+## Phase 2.5 — Policy Intelligence Foundation ✅ Complete
+
+**Tests:** 55 tests, all passing (+20)
+
+### Objectives
+Replace hollow synthetic citation strings with structured, evidence-backed policy references using a curated local dataset. Make the app feel evidence-backed before the real CMS pipeline is built.
+
+### Deliverables
+- `data/reference/policy_examples.json`: 5 curated public-policy-style references (NCCI PTP 80048/80053, ICD-10 Z00.00 preventive context, Modifier 25 guidance, LCD venipuncture illustrative, MUE panel units illustrative)
+- `retrieval/policy_repository.py`: JSON-backed policy reference service (`load_policy_references`, `find_policy_by_document_id`, `find_policies_by_codes`, `get_citation_detail`)
+- `rules/ncci.py` updated: doc_id `NCCI_PTP_80048_80053_SAMPLE`, effective_date `2000-01-01`, substantive excerpt
+- `rules/code_validity.py` updated: doc_ids `ICD10_Z00_PREVENTIVE_CONTEXT_SAMPLE` and `NCCI_MODIFIER_25_SAMPLE`, FY2026 edition, effective dates, substantive excerpts
+- `app/main.py` updated: `_render_citation_detail()` helper; "📄 View policy detail" expander with source, doc_id, section, edition, effective_date, title, source URL, excerpt, notes
+- `db/audit_repository.py` updated: `citation_effective_date` column added to schema + backward-compatible `ALTER TABLE` migration in `initialize_database()`
+- `tests/test_policy_repository.py`: 20 tests covering JSON loading, document_id lookup, code-based lookup, citation resolution, audit migration
+
+### Dependencies
+- Phase 2 complete (Citation dataclass, AuditRepository must exist)
+
+### Success Criteria
+- All 3 rule findings (NCCI PTP, dx-procedure conflict, missing modifier 25) have `citation.doc_id` values that resolve in `policy_examples.json`
+- "📄 View policy detail" expander shows title, source URL, and structured policy excerpt for each finding
+- `citation_effective_date` is persisted in the audit log
+- Backward-compatible migration: existing Sprint 2 `audit.db` databases get the new column added safely
+- All 55 tests pass
+- No LLM calls, no Chroma, no live CMS API
+
+### Future replacement point
+`retrieval/policy_repository.py:_load_policy_references()` is the seam. Replace with a ChromaDB query after `retrieval/ingest.py` and `retrieval/vector_store.py` are implemented. The JSON file can then be removed. The public interface (`find_policy_by_document_id`, `find_policies_by_codes`, `get_citation_detail`) and all callers stay unchanged.
+
+---
+
 ## Phase 3 — Complete the Deterministic Layer + Claim Intake Form
 
 **Status:** Next  

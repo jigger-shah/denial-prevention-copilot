@@ -4,7 +4,7 @@
 **Date:** June 2026  
 **Repository:** denial-prevention-copilot  
 **Branch:** main  
-**Last commit:** `ee45738` — Add audit logging, human decision workflow, and fixed override save bug
+**Last commit:** Sprint 3 — Policy intelligence foundation (local policy reference dataset, citation detail view, audit schema migration)
 
 ---
 
@@ -12,7 +12,7 @@
 
 The Denial Prevention Copilot is a portfolio-grade AI copilot for pre-submission healthcare claim review. The core thesis: move denial management upstream by reviewing claims before they are submitted, with every finding backed by a cited policy source and every decision made by a human.
 
-Three development phases are complete:
+Five development phases are complete:
 
 | Phase | Status | Commit |
 |---|---|---|
@@ -20,12 +20,13 @@ Three development phases are complete:
 | Deterministic Claim Review v0.1 | ✅ Complete | `cf322d9` |
 | Pre-Audit Model Refactor | ✅ Complete | `dc681f2` |
 | Governance & Audit Logging | ✅ Complete | `ee45738` |
+| Policy Intelligence Foundation | ✅ Complete | Sprint 3 |
 
-**What works today:** A Streamlit application that loads synthetic claims, runs deterministic NCCI bundling and diagnosis-to-procedure conflict checks, produces severity-ranked cited findings, captures human accept/override decisions with required reasons, and persists every decision to an append-only SQLite audit log with CSV export.
+**What works today:** A Streamlit application that loads synthetic claims, runs deterministic NCCI bundling and diagnosis-to-procedure conflict checks, produces severity-ranked findings backed by structured policy references, captures human accept/override decisions with required reasons, and persists every decision (including citation effective date) to an append-only SQLite audit log with CSV export. Each finding card shows a full "📄 View policy detail" panel with title, CMS source URL, section, edition, and policy excerpt drawn from a curated local dataset.
 
-**What is not yet built:** The LLM agent layer (coverage validation, documentation review, denial prevention synthesis), the RAG retrieval pipeline over real LCD/NCD data, the MUE and NPI rule checks, and the manual claim intake form.
+**What is not yet built:** The LLM agent layer (coverage validation, documentation review, denial prevention synthesis), the RAG retrieval pipeline over real LCD/NCD data, the MUE and NPI rule checks, and the manual claim intake form. The local policy dataset (`policy_examples.json`) is a curated placeholder — real CMS/NCCI/LCD/NCD ingestion is a future replacement point.
 
-**Test coverage:** 35 tests, all passing. Zero mocks — the rule layer tests use inline data; the audit tests use a temporary database.
+**Test coverage:** 55 tests, all passing. Zero mocks — the rule layer tests use inline data; the audit and policy tests use temporary databases and the local JSON file.
 
 ---
 
@@ -48,7 +49,7 @@ Three development phases are complete:
 │  │  │  severity badge   │                                       │
 │  │  │  issue + rec      │                                       │
 │  │  │  citation caption │                                       │
-│  │  │  source excerpt   │                                       │
+│  │  │  📄 policy detail │  ← Sprint 3                           │
 │  │  │  [Accept][Override│                                       │
 │  │  │  [💾 Save Decision│                                       │
 │  │  └─────────────────  │                                       │
@@ -100,7 +101,18 @@ Three development phases are complete:
 ┌──────────────────────────────────────────────────────────────┐
 │  Data                                                         │
 │  data/synthetic/sample_claims.json   5 synthetic claims      │
-│  data/reference/                     EMPTY — no CMS files    │
+│  data/reference/policy_examples.json 5 policy references ←S3 │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│  retrieval/policy_repository.py   IMPLEMENTED ← Sprint 3     │
+│  load_policy_references()  → reads policy_examples.json      │
+│  find_policy_by_document_id()  → O(n) scan by doc_id         │
+│  find_policies_by_codes()      → match by CPT/ICD/modifier   │
+│  get_citation_detail()         → enrich Citation for UI       │
+│                                                              │
+│  Future replacement: swap _load_policy_references() with     │
+│  ChromaDB query when ingest.py + vector_store.py are built   │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -123,7 +135,7 @@ Three development phases are complete:
 - Claim selector (5 synthetic claims from JSON)
 - Claim details expander (payer, NPI, CPT, ICD-10, modifiers, POS)
 - Color-coded finding cards with severity badges
-- Per-finding source excerpt expander
+- "📄 View policy detail" expander per finding: title, CMS source URL, section, edition, effective date, policy excerpt, implementation notes (Sprint 3)
 - Accept / Override decision controls (override requires non-empty reason)
 - Reviewer name input (sidebar, required to save)
 - "Manual Review Recommended" badge for confidence < 70%
@@ -140,13 +152,20 @@ Three development phases are complete:
   - Rejected if `citation_source` or `citation_doc_id` is empty
   - Rejected if `user_decision == "overridden"` and `override_reason` is empty
 - Per-finding save confirmation ("✅ Saved to audit log")
-- Full audit trail: timestamp, claim_id, finding_id, severity, decision, reason, reviewer, model_version, prompt_version
+- Full audit trail: timestamp, claim_id, finding_id, severity, decision, reason, reviewer, model_version, prompt_version, citation_effective_date (Sprint 3)
+- Backward-compatible `ALTER TABLE` migration for `citation_effective_date` on existing databases (Sprint 3)
+
+### Policy Intelligence (Sprint 3)
+- `data/reference/policy_examples.json` — 5 curated policy references (NCCI PTP 80048/80053, ICD-10 Z00.00, Modifier 25, LCD venipuncture, MUE panel limits)
+- `retrieval/policy_repository.py` — JSON-backed service: `find_policy_by_document_id`, `find_policies_by_codes`, `get_citation_detail`
+- Rule modules updated: doc_ids now reference `policy_examples.json` entries with real effective dates and substantive excerpts
 
 ### Tests
-- 35 tests, all passing, < 0.1 second runtime
+- 55 tests, all passing, < 0.1 second runtime
 - No network calls, no external dependencies, no mocks
 - `tests/test_rule_engine.py` — 20 tests covering NCCI, dx conflict, modifier, risk scoring, finding_id stability, Citation structure
 - `tests/test_audit.py` — 15 tests covering persistence, validation, filtering, CSV export
+- `tests/test_policy_repository.py` — 20 tests covering JSON loading, document_id lookup, code-based lookup, citation resolution, audit migration (Sprint 3)
 
 ---
 
@@ -166,7 +185,7 @@ Three development phases are complete:
 | §6 P1 | Confidence score per finding with low-confidence escalation flag | ✅ Confidence field + "Manual Review Recommended" badge |
 | §7 Story 1 | Findings include severity, issue, recommended fix, citation | ✅ All four present on every finding |
 | §7 Story 1 | Clean claim explicitly marked with checks run | ✅ "CLEAN — no denial risks identified" |
-| §7 Story 2 | Citation shows source excerpt | ✅ Expandable "View source excerpt" per finding |
+| §7 Story 2 | Citation shows source excerpt | ✅ "📄 View policy detail" expander with title, source URL, section, edition, effective date, and excerpt |
 | §7 Story 3 | Override requires free-text reason, captured in audit log | ✅ With reviewer name and timestamp |
 | §7 Story 4 | Exportable per-claim audit log | ✅ CSV export in Audit Trail tab |
 | §12 | Immutable log of inputs, findings, citations, decisions | ✅ Append-only SQLite, no UPDATE/DELETE |
@@ -223,10 +242,13 @@ Full register in `docs/Technical_Debt_Register.md`.
 
 | ID | Item | Priority | Status |
 |---|---|---|---|
-| TD-01 | `Finding.citation` was flat string | High | ✅ Resolved |
-| TD-02 | No stable finding identity | High | ✅ Resolved (SHA-256) |
-| TD-03 | Positional session state keys | High | ✅ Resolved |
-| TD-04 | Widget key reused as storage slot (override reason) | High | ✅ Resolved |
+| TD-R1 | `Finding.citation` was flat string | High | ✅ Resolved |
+| TD-R2 | No stable finding identity | High | ✅ Resolved (SHA-256) |
+| TD-R3 | Positional session state keys | High | ✅ Resolved |
+| TD-R4 | Widget key reused as storage slot (override reason) | High | ✅ Resolved |
+| TD-R6 | Citation doc_ids were opaque synthetic strings | High | ✅ Resolved (Sprint 3) |
+| TD-R7 | No citation title, source URL, or notes in UI | Medium | ✅ Resolved (Sprint 3) |
+| TD-R8 | `citation_effective_date` not persisted in audit log | High | ✅ Resolved (Sprint 3) |
 | TD-05 | `rules/mue.py` stub | High | ⚠ Open |
 | TD-06 | `rules/npi.py` stub | High | ⚠ Open |
 | TD-07 | 1 hardcoded NCCI PTP edit pair | High | ⚠ Open |
@@ -263,13 +285,13 @@ Before wiring the LLM agent layer, close the gaps in the rule layer and claim in
 
 ## Readiness Assessment
 
-### Portfolio Demo — 55 / 100
+### Portfolio Demo — 62 / 100
 
-**What works:** The UI is polished and tells the architecture story clearly. Findings display with severity badges, citations, and source excerpts. The audit trail is functional. The governance story (append-only log, citation required, human-in-loop) is demonstrable end-to-end.
+**What works:** The UI is polished and tells the architecture story clearly. Findings display with severity badges, full citation detail panels (title, CMS source URL, section, edition, effective date, policy excerpt), and the audit trail. Clicking "📄 View policy detail" shows a real CMS source URL and policy-level language — the app now reads as evidence-backed rather than purely synthetic. The governance story (append-only log, citation required, human-in-loop) is demonstrable end-to-end.
 
-**What is missing:** The AI isn't wired. Showing the app today demonstrates the *infrastructure* for agentic AI but not the AI itself. If asked "show me an LLM finding," there is nothing to show. Only 3 rule-based findings are possible; the working example from the PRD produces all three of them.
+**What is missing:** The AI isn't wired. Only 3 rule-based findings are possible. The policy dataset is curated (5 entries) rather than sourced live from CMS. If asked "show me an LLM finding," there is nothing to show.
 
-**Score rationale:** A working, deployable application with a coherent architecture story, solid tests, and a meaningful governance narrative earns a passing score. The ceiling is 55 until at least one agent is wired and producing real findings from real CMS data.
+**Score rationale:** Sprint 3 raised the score from 55 → 62 by making citations feel real (actual source URLs, policy titles, substantive excerpts) and adding 20 more tests. The ceiling remains ~65 until at least one agent is wired and producing findings from real CMS data.
 
 ---
 
@@ -317,8 +339,10 @@ See `docs/Roadmap.md` for the full phased plan.
 | Phase | Description | Key Deliverable |
 |---|---|---|
 | ✅ 0 | Environment Setup | Skeleton, requirements, CLAUDE.md |
-| ✅ 1 | Deterministic Claim Review | Rule layer, Streamlit UI, 12 tests |
+| ✅ 1 | Deterministic Claim Review | Rule layer, Streamlit UI, 20 tests |
+| ✅ 1.5 | Pre-Audit Model Refactor | Citation dataclass, finding_id, source field |
 | ✅ 2 | Governance & Audit Logging | AuditRepository, audit trail, 15 tests |
+| ✅ 2.5 | Policy Intelligence Foundation | policy_examples.json, policy_repository.py, citation detail view, 20 tests |
 | 3 | Complete Deterministic Layer | Real NCCI/MUE CSV loaders, NPI API, claim intake form |
 | 4 | LCD/NCD Retrieval Pipeline | CMS API ingestion, ChromaDB, section-aware chunking |
 | 5 | Coverage Validation Agent | RAG + Claude API, medical necessity findings with citations |

@@ -36,9 +36,9 @@ def _load_ptp_edits() -> list[dict]:
             "col1": "80053",
             "col2": "80048",
             "modifier_indicator": 0,
-            "doc_id": "NCCI-PTP-SYNTHETIC",
-            "edition": "synthetic sample",
-            "effective_date": None,
+            "doc_id": "NCCI_PTP_80048_80053_SAMPLE",
+            "edition": "NCCI Policy Manual for Medicare Services (sample reference)",
+            "effective_date": "2000-01-01",
         },
     ]
 
@@ -85,12 +85,14 @@ def check_ncci_pairs(claim: ClaimIn) -> list[Finding]:
             citation=Citation(
                 source="NCCI PTP",
                 doc_id=edit["doc_id"],
-                section="Physician/Practitioner PTP edit table, Column 1 / Column 2",
+                section="Physician/Practitioner PTP Edit Table, Column 1 / Column 2",
                 edition=edit["edition"],
                 effective_date=edit["effective_date"],
                 excerpt=(
-                    f"{col1} (col 1) / {col2} (col 2) — "
-                    f"modifier indicator {edit['modifier_indicator']}"
+                    f"CPT code {col2} (Basic Metabolic Panel) is a component of CPT code "
+                    f"{col1} (Comprehensive Metabolic Panel). Separate billing of {col2} "
+                    f"alongside {col1} on the same date of service constitutes unbundling. "
+                    f"Modifier indicator {edit['modifier_indicator']}: no modifier bypass is permitted."
                 ),
             ),
             confidence=0.95,

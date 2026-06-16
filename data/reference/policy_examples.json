@@ -1,0 +1,62 @@
+[
+  {
+    "document_id": "NCCI_PTP_80048_80053_SAMPLE",
+    "source_type": "NCCI",
+    "title": "NCCI PTP Edit — Comprehensive Metabolic Panel and Basic Metabolic Panel",
+    "section": "Physician/Practitioner PTP Edit Table, Column 1 / Column 2",
+    "effective_date": "2000-01-01",
+    "edition": "NCCI Policy Manual for Medicare Services (sample reference)",
+    "source_url": "https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits",
+    "excerpt": "CPT code 80048 (Basic Metabolic Panel) is a component of CPT code 80053 (Comprehensive Metabolic Panel). When 80053 is billed, it includes all tests bundled within 80048. Separate billing of 80048 alongside 80053 on the same date of service constitutes unbundling. Modifier indicator 0: no modifier bypass is permitted for this pair.",
+    "applies_to_codes": ["80048", "80053"],
+    "notes": "Modifier indicator 0 — no bypass allowed. Remove 80048 when billing 80053. This PTP edit pair is illustrative of NCCI bundling logic; actual quarterly edit tables are published by CMS."
+  },
+  {
+    "document_id": "ICD10_Z00_PREVENTIVE_CONTEXT_SAMPLE",
+    "source_type": "ICD10",
+    "title": "ICD-10-CM Coding Guideline — Z00.00 Encounter for General Adult Medical Examination",
+    "section": "ICD-10-CM Official Guidelines for Coding and Reporting, Section I.C.21.c — Factors Influencing Health Status (Z Codes)",
+    "effective_date": "2025-10-01",
+    "edition": "ICD-10-CM FY2026 (sample reference)",
+    "source_url": "https://www.cdc.gov/nchs/icd/icd-10-cm/index.html",
+    "excerpt": "Z00.00: Encounter for general adult medical examination without abnormal findings. This code is assigned for a general medical examination that does not reveal any abnormal findings. When a separate problem is encountered and evaluated during the same visit, report an additional code for the condition along with modifier 25 on the associated E/M service. Problem-oriented E/M codes (99202–99215) are not appropriate as the primary code when the encounter is a routine preventive examination unless a separately identifiable service is documented.",
+    "applies_to_codes": ["Z00.00", "99202", "99203", "99204", "99205", "99211", "99212", "99213", "99214", "99215"],
+    "notes": "Z00.00 signals a well/preventive visit. Pairing it with a problem-oriented E/M without modifier 25 and without a distinct problem diagnosis is a common denial trigger."
+  },
+  {
+    "document_id": "NCCI_MODIFIER_25_SAMPLE",
+    "source_type": "NCCI_POLICY_MANUAL",
+    "title": "NCCI Policy Manual — Modifier 25: Significant, Separately Identifiable E/M Service",
+    "section": "Chapter 1, Section D — Modifiers",
+    "effective_date": "2024-01-01",
+    "edition": "NCCI Policy Manual for Medicare Services, effective January 2024 (sample reference)",
+    "source_url": "https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits/medicare-ncci-policy-manual",
+    "excerpt": "Modifier 25 should be appended to an Evaluation and Management (E/M) service code to indicate that on the day of a procedure or service, the patient's condition required a significant, separately identifiable E/M service above and beyond the usual pre- and post-operative care associated with the procedure. The E/M service must be documented separately and must meet the criteria for the level of service billed. Modifier 25 is not appropriate when the E/M service is the only service performed, or when it is provided in the context of a routine preventive examination unless a distinctly different problem is identified and separately addressed.",
+    "applies_to_codes": ["25"],
+    "notes": "Modifier 25 is required when a problem-oriented E/M (e.g., 99214) is billed alongside a preventive visit diagnosis (e.g., Z00.00) to signal a separately identifiable service. Without it, the E/M is at risk of denial as duplicative of the preventive visit."
+  },
+  {
+    "document_id": "LCD_VENIPUNCTURE_36415_SAMPLE",
+    "source_type": "LCD",
+    "title": "CMS Local Coverage Determination — Routine Venipuncture for Collection of Specimens (Illustrative)",
+    "section": "Indications and Limitations of Coverage",
+    "effective_date": "2020-01-01",
+    "edition": "LCD Sample Reference (illustrative; not a real LCD number)",
+    "source_url": "https://www.cms.gov/medicare-coverage-database/view/lcd.aspx",
+    "excerpt": "CPT code 36415 (Collection of venous blood by venipuncture) is separately reimbursable under Medicare when performed in a physician office setting (Place of Service 11) provided the service is medically necessary and documented. When laboratory panel services (e.g., 80048, 80053) are billed on the same date, 36415 is typically payable as the specimen collection mechanism, provided the setting and payer rules permit separate billing. Some payers bundle 36415 into the office visit or panel fee; verify payer-specific policy before billing.",
+    "applies_to_codes": ["36415", "80048", "80053"],
+    "notes": "36415 (venipuncture) is separately billable in POS 11 for Medicare in most cases. Included here as an illustrative LCD-style reference for CLM-001 which bills all four codes together."
+  },
+  {
+    "document_id": "MUE_PANEL_UNITS_SAMPLE",
+    "source_type": "CMS",
+    "title": "Medically Unlikely Edits (MUE) — Unit Limits for Laboratory Panel Codes (Illustrative)",
+    "section": "MUE Table — CPT Codes 80000–89999 (Pathology and Laboratory)",
+    "effective_date": "2024-01-01",
+    "edition": "CMS MUE Table Q1 2024 (sample reference)",
+    "source_url": "https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits/medicare-ncci-medically-unlikely-edits",
+    "excerpt": "Medically Unlikely Edits (MUEs) define the maximum number of units of service a provider would bill under most circumstances for a single beneficiary on a single date of service. For most laboratory panel codes (80048–80076), the MUE value is 1 unit per date of service. Billing units greater than the MUE value results in an automatic claim line denial. Modifier Adjudication Indicator (MAI) 3 means the MUE is a hard limit based on clinical criteria and cannot be overridden by clinical documentation alone.",
+    "applies_to_codes": ["80048", "80053", "80076"],
+    "notes": "MUE limits are published quarterly by CMS. For panel codes, 1 unit per date is the standard limit. This entry is illustrative of MUE logic for the synthetic claim set."
+  }
+]
