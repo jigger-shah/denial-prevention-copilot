@@ -13,11 +13,16 @@ from rules.rule_engine import load_claim, review_claim, overall_risk
 # ---------------------------------------------------------------------------
 
 def _make_claim(**overrides) -> dict:
-    """Base clean claim; override fields as needed."""
+    """Base clean claim; override fields as needed.
+
+    NPI is blank by default — NPI validation is tested in test_rules.py.
+    Blanking here avoids Luhn failures short-circuiting the coding checks
+    these tests are designed to exercise.
+    """
     base = {
         "claim_id": "TEST-BASE",
         "payer": "Medicare Part B",
-        "npi": "1234567890",
+        "npi": "",
         "cpt_codes": ["99213"],
         "icd10_codes": ["J06.9"],
         "modifiers": [],

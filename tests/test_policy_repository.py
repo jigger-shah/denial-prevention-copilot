@@ -50,7 +50,7 @@ REQUIRED_FIELDS = {
 _CLM001 = {
     "claim_id": "CLM-001",
     "payer": "Medicare Part B",
-    "npi": "1234567890",
+    "npi": "",
     "cpt_codes": ["99214", "80053", "80048", "36415"],
     "icd10_codes": ["Z00.00"],
     "modifiers": [],
@@ -61,7 +61,7 @@ _CLM001 = {
 _CLM004 = {
     "claim_id": "CLM-004",
     "payer": "Medicare Part B",
-    "npi": "1234567890",
+    "npi": "",
     "cpt_codes": ["99214"],
     "icd10_codes": ["Z00.00"],
     "modifiers": [],

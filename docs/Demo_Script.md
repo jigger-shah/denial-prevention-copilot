@@ -303,6 +303,9 @@ Use these when an interviewer asks to go deeper on the technical design.
 ### Why the rule layer runs first
 The NCCI edit table is binary — 80048 is either bundled into 80053 or it isn't. An LLM reasoning about this will be sometimes right and sometimes wrong. A lookup is always right. The principle: deterministic where deterministic suffices; generative where reasoning is required.
 
+### Why NPI runs before NCCI
+NPI validation is the first check because an invalid provider identifier makes downstream coding checks unreliable — a claim with a deactivated NPI will be rejected regardless of whether the codes are correct. A HIGH NPI finding (bad format or failed Luhn check digit) short-circuits the rule engine: NCCI, MUE, and code validity do not run. A MEDIUM finding (NPPES lookup failed or NPI not enrolled) is included alongside coding findings so the specialist sees the full picture. NPPES network errors are silenced — a timeout never blocks a review.
+
 ### Why finding_id is SHA-256
 The audit log is append-only. The decision row is written once and never updated. The foreign key from decision → finding must remain valid if the claim is re-reviewed, if findings are reordered, or if the system adds agent findings alongside rule findings. SHA-256 on (claim_id, rule, issue) is process-stable and position-independent.
 

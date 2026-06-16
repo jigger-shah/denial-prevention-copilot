@@ -11,7 +11,7 @@ this module first (deterministic checks) before dispatching agents.
 import hashlib
 
 from rules.models import ClaimIn, Finding
-from rules import ncci, mue, code_validity
+from rules import ncci, mue, code_validity, npi
 
 
 _SEVERITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
@@ -61,6 +61,17 @@ def review_claim(claim: ClaimIn) -> list[Finding]:
     which rule modules do not need to know about.
     """
     findings: list[Finding] = []
+
+    # NPI runs first. A HIGH finding (invalid format or Luhn failure) short-circuits
+    # so downstream coding checks do not run — invalid provider identity makes
+    # code-level checks unreliable and would produce misleading findings.
+    npi_findings = npi.check_npi(claim)
+    if any(f.severity == "HIGH" for f in npi_findings):
+        for f in npi_findings:
+            f.finding_id = _make_finding_id(claim.claim_id, f.rule, f.issue)
+        return npi_findings
+
+    findings.extend(npi_findings)  # MEDIUM NPI findings (not found) still included
     findings.extend(ncci.check_ncci_pairs(claim))
     findings.extend(mue.check_mue_limits(claim))
     findings.extend(code_validity.check_code_validity(claim))

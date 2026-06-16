@@ -3,9 +3,14 @@ Unit tests for the deterministic rule layer.
 
 Tests are self-contained: no live APIs, no CMS reference files required.
 MUE tests monkeypatch mue_loader.lookup_mue to inject controlled fixture data.
+NPI tests monkeypatch requests.get to avoid real NPPES network calls.
 Loader tests use tmp_path fixtures with minimal xlsx/csv content.
 
 Coverage:
+  - NPI: empty → no finding; bad format → HIGH; bad Luhn → HIGH
+  - NPI: NPPES not found → MEDIUM; NPPES active → no finding; timeout → no finding
+  - NPI: HIGH finding short-circuits rule engine (no NCCI/MUE/code_validity)
+  - NPI: MEDIUM finding does not short-circuit (coding checks still run)
   - MUE: MAI=1 → HIGH; MAI=2 → MEDIUM; MAI=3 → MEDIUM
   - MUE: units at or below limit → no finding
   - MUE: code not in table → no finding
@@ -22,10 +27,11 @@ from __future__ import annotations
 
 import sys
 import pathlib
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 import pandas as pd
+import requests
 
 _ROOT = pathlib.Path(__file__).parent.parent
 if str(_ROOT) not in sys.path:
@@ -37,6 +43,7 @@ from rules.mue import check_mue_limits
 from rules.ncci import check_ncci_pairs
 from rules.code_validity import check_code_validity
 from rules.rule_engine import review_claim
+from rules.npi import check_npi, luhn_valid
 
 
 # ---------------------------------------------------------------------------
@@ -411,3 +418,185 @@ def test_code_validity_missing_modifier_25_returns_medium():
     )
     findings = check_code_validity(claim)
     assert any(f.severity == "MEDIUM" and "25" in f.issue for f in findings)
+
+
+# ---------------------------------------------------------------------------
+# NPI — luhn_valid() unit tests
+# ---------------------------------------------------------------------------
+
+# 1234567893 computed valid (passes Luhn with 80840 prefix); 1234567890 is invalid.
+_VALID_NPI = "1234567893"
+_INVALID_NPI = "1234567890"
+
+
+def test_luhn_valid_known_valid_npi():
+    assert luhn_valid(_VALID_NPI) is True
+
+
+def test_luhn_valid_known_invalid_npi():
+    assert luhn_valid(_INVALID_NPI) is False
+
+
+def test_luhn_valid_non_numeric_returns_false():
+    assert luhn_valid("123ABC7890") is False
+
+
+def test_luhn_valid_wrong_length_returns_false():
+    assert luhn_valid("12345") is False
+
+
+def test_luhn_valid_empty_returns_false():
+    assert luhn_valid("") is False
+
+
+# ---------------------------------------------------------------------------
+# NPI — check_npi() behavior
+# ---------------------------------------------------------------------------
+
+def test_npi_empty_npi_returns_no_finding():
+    """Empty NPI is optional — no finding emitted."""
+    claim = _claim(npi="")
+    assert check_npi(claim) == []
+
+
+def test_npi_whitespace_only_returns_no_finding():
+    """Whitespace-only NPI is treated as empty."""
+    claim = _claim(npi="   ")
+    assert check_npi(claim) == []
+
+
+def test_npi_non_numeric_returns_high():
+    """NPI containing letters → HIGH finding, rule 'npi_invalid'."""
+    claim = _claim(npi="123ABC7890")
+    findings = check_npi(claim)
+    assert len(findings) == 1
+    assert findings[0].severity == "HIGH"
+    assert findings[0].rule == "npi_invalid"
+
+
+def test_npi_wrong_length_returns_high():
+    """NPI shorter than 10 digits → HIGH finding."""
+    claim = _claim(npi="12345")
+    findings = check_npi(claim)
+    assert len(findings) == 1
+    assert findings[0].severity == "HIGH"
+    assert findings[0].rule == "npi_invalid"
+
+
+def test_npi_bad_luhn_returns_high():
+    """10-digit NPI that fails Luhn → HIGH finding."""
+    claim = _claim(npi=_INVALID_NPI)
+    findings = check_npi(claim)
+    assert len(findings) == 1
+    assert findings[0].severity == "HIGH"
+    assert findings[0].rule == "npi_invalid"
+    assert _INVALID_NPI in findings[0].issue
+
+
+def test_npi_nppes_not_found_returns_medium():
+    """Luhn-valid NPI with 0 NPPES results → MEDIUM finding, rule 'npi_registry'."""
+    claim = _claim(npi=_VALID_NPI)
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"result_count": 0, "results": []}
+    mock_resp.raise_for_status.return_value = None
+    with patch("rules.npi.requests.get", return_value=mock_resp):
+        findings = check_npi(claim)
+    assert len(findings) == 1
+    assert findings[0].severity == "MEDIUM"
+    assert findings[0].rule == "npi_registry"
+    assert _VALID_NPI in findings[0].issue
+
+
+def test_npi_nppes_active_returns_no_finding():
+    """Luhn-valid NPI with active NPPES record → no finding."""
+    claim = _claim(npi=_VALID_NPI)
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "result_count": 1,
+        "results": [{"basic": {"status": "A", "first_name": "JOHN", "last_name": "DOE"}}],
+    }
+    mock_resp.raise_for_status.return_value = None
+    with patch("rules.npi.requests.get", return_value=mock_resp):
+        findings = check_npi(claim)
+    assert findings == []
+
+
+def test_npi_nppes_inactive_status_returns_medium():
+    """Luhn-valid NPI found but status != 'A' → MEDIUM finding."""
+    claim = _claim(npi=_VALID_NPI)
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "result_count": 1,
+        "results": [{"basic": {"status": "D"}}],  # D = deactivated
+    }
+    mock_resp.raise_for_status.return_value = None
+    with patch("rules.npi.requests.get", return_value=mock_resp):
+        findings = check_npi(claim)
+    assert len(findings) == 1
+    assert findings[0].severity == "MEDIUM"
+    assert findings[0].rule == "npi_registry"
+
+
+def test_npi_nppes_timeout_returns_no_finding():
+    """NPPES request times out → no finding; review continues unblocked."""
+    claim = _claim(npi=_VALID_NPI)
+    with patch("rules.npi.requests.get", side_effect=requests.Timeout()):
+        findings = check_npi(claim)
+    assert findings == []
+
+
+def test_npi_nppes_network_error_returns_no_finding():
+    """NPPES network error (ConnectionError) → no finding."""
+    claim = _claim(npi=_VALID_NPI)
+    with patch("rules.npi.requests.get", side_effect=requests.ConnectionError()):
+        findings = check_npi(claim)
+    assert findings == []
+
+
+def test_npi_finding_has_structured_citation():
+    """NPI finding carries Citation with correct doc_id and source."""
+    claim = _claim(npi=_INVALID_NPI)
+    findings = check_npi(claim)
+    assert len(findings) == 1
+    cit = findings[0].citation
+    assert cit.doc_id == "NPPES_NPI_REGISTRY"
+    assert cit.source == "NPPES"
+    assert cit.section == "Provider Enumeration Validation"
+    assert cit.excerpt  # non-empty
+
+
+# ---------------------------------------------------------------------------
+# NPI — rule engine short-circuit behavior
+# ---------------------------------------------------------------------------
+
+def test_npi_high_finding_short_circuits_rule_engine():
+    """HIGH NPI (bad Luhn) → rule engine returns only NPI finding; NCCI/MUE/code_validity do not run."""
+    claim = _claim(
+        npi=_INVALID_NPI,
+        cpt_codes=["80053", "80048"],  # would normally trigger NCCI
+        units={"80053": 1, "80048": 1},
+        icd10_codes=["Z00.00"],        # would normally trigger dx conflict with 99214
+    )
+    findings = review_claim(claim)
+    assert len(findings) == 1
+    assert findings[0].severity == "HIGH"
+    assert findings[0].rule == "npi_invalid"
+    assert findings[0].finding_id  # stamped by rule engine
+
+
+def test_npi_medium_finding_does_not_short_circuit():
+    """MEDIUM NPI (not found in NPPES) does not short-circuit; coding checks still run."""
+    claim = _claim(
+        npi=_VALID_NPI,
+        cpt_codes=["80053", "80048"],
+        units={"80053": 1, "80048": 1},
+        icd10_codes=["I10"],
+    )
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"result_count": 0, "results": []}
+    mock_resp.raise_for_status.return_value = None
+    with patch("rules.npi.requests.get", return_value=mock_resp):
+        findings = review_claim(claim)
+    rules_hit = {f.rule for f in findings}
+    assert "npi_registry" in rules_hit
+    assert "ncci_ptp" in rules_hit  # NCCI still ran

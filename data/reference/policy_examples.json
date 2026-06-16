@@ -1,5 +1,17 @@
 [
   {
+    "document_id": "NPPES_NPI_REGISTRY",
+    "source_type": "NPI_REGISTRY",
+    "title": "CMS NPPES NPI Registry — Provider Enumeration and Status Validation",
+    "section": "Provider Enumeration Validation",
+    "effective_date": null,
+    "edition": "API v2.1",
+    "source_url": "https://npiregistry.cms.hhs.gov/api/",
+    "excerpt": "The NPPES NPI Registry is the authoritative source for National Provider Identifier (NPI) validation. A 10-digit NPI is structurally valid if it passes the Luhn check-digit algorithm with the '80840' prefix per CMS NPI enumeration standards. An NPI that is not found in NPPES, or is found with a non-active status, indicates that the provider may not be enrolled with CMS. Billing with a deactivated or invalid NPI results in automatic claim rejection.",
+    "applies_to_codes": [],
+    "notes": "Lookup is performed via the NPPES REST API (v2.1) at review time with a 2-second timeout. Network failures do not block claim review. NPI is optional for this MVP — empty NPI fields are silently skipped. Luhn check uses the '80840' prefix per CMS specification."
+  },
+  {
     "document_id": "CMS_MUE_PRACTITIONER_Q32026",
     "source_type": "MUE",
     "title": "CMS NCCI Medically Unlikely Edits — Practitioner Services (Q3 2026)",
