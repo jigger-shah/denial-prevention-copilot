@@ -2,7 +2,7 @@
 ## Denial Prevention Copilot
 
 **Last updated:** June 2026
-**Scope:** All known technical debt as of Sprint 5 (file-backed NCCI PTP lookup)
+**Scope:** All known technical debt as of Sprint 6 (Units + MUE ingestion)
 
 Priority definitions:
 - **High** — blocks a P0 PRD requirement, a core demo scenario, or correct audit behavior
@@ -39,6 +39,8 @@ These items were identified before audit logging was implemented and resolved in
 |---|---|---|
 | ~~TD-07~~ | No manual claim intake — demo limited to 5 fixed synthetic claims | `app/claim_intake.py` + Manual Claim Entry mode in `app/main.py`; service-line coding grid, payer mapping, NPI format validation, Load Worked Example; `load_claim()` updated for backward compat |
 | ~~TD-01~~ | Only 1 hardcoded NCCI PTP edit pair (of ~250,000+) | `rules/ncci_loader.py` loads all 4 CMS xlsx files; `rules/ncci.py` uses file-backed lookup with synthetic fallback; ~1.73M active pairs now available; 44 new tests |
+| ~~TD-02~~ | `rules/mue.py` was a docstring-only stub | `rules/mue_loader.py` + `rules/mue.py` implemented; file-backed with synthetic fallback; MAI-aware severity; wired into rule engine; 35 new tests (Sprint 6) |
+| ~~TD-08~~ (partial) | `tests/test_rules.py` was a docstring stub | Implemented with 35 MUE, NCCI, and code_validity tests — TD-08 partially resolved; `test_orchestrator.py` remains a stub pending Phase 7 |
 
 ---
 
@@ -56,25 +58,13 @@ These items were identified before audit logging was implemented and resolved in
 
 ---
 
-#### TD-02: `rules/mue.py` Is a Docstring-Only Stub
+#### ~~TD-02: `rules/mue.py` Is a Docstring-Only Stub~~ — RESOLVED Sprint 6
 
-**Description:** The MUE (Medically Unlikely Edit) module exists as a stub with no implementation. MUE limits define the maximum units of service payable per HCPCS/CPT code per date of service. Exceeding the MUE for a code is a hard denial trigger (MAI=1) or a documentation-required denial (MAI=2/3).
+**Resolution:** `rules/mue_loader.py` implements file-backed MUE table loading from `data/reference/mue/*.xlsx` (or `*.csv`) with column-name discovery (not fixed column positions), `functools.lru_cache`, and synthetic fallback when no CMS files are present. `rules/mue.py:check_mue_limits()` compares `claim.units[code]` against the MUE table; MAI=1 → HIGH, MAI=2/3 → MEDIUM. Wired into `rule_engine.review_claim()` after NCCI. 35 new tests cover all severity paths, fallback, file-backed loading (xlsx + csv), multi-code claims, and integration with rule engine.
 
-**Location:** `rules/mue.py` (entire file)
+Units field support added simultaneously: `build_manual_claim()` now populates `ClaimIn.units` from the service-line grid; UI grid has a Units column; `WORKED_EXAMPLE` includes `units` per service line.
 
-**Impact:**
-- Unit-of-service denial risks are completely undetected.
-- MUE violations are among the most common denial reasons for labs, surgical codes, and durable medical equipment.
-- The PRD explicitly lists MUE limits as a P0 deterministic validation requirement (§6 P0).
-
-**Recommended Fix:**
-1. Download the CMS NCCI MUE file to `data/reference/ncci_mue_<quarter>.csv`.
-2. Implement `check_mue_limits(claim: ClaimIn) -> list[Finding]` that compares `claim.units[code]` against the MUE limit for each code.
-3. Apply MAI-aware severity: MAI=1 → HIGH (hard denial), MAI=2/3 → MEDIUM (documentation may bypass).
-4. Build `Citation` from the MUE file edition and MAI column.
-5. Wire into `rule_engine.review_claim()`.
-
-**Planned Sprint:** Phase 3 — Complete Deterministic Layer
+**Remaining note:** CMS Practitioner Services MUE file must be downloaded separately and placed in `data/reference/mue/`. Until then, the synthetic fallback (`_SYNTHETIC_MUE` dict in `mue_loader.py`) provides plausible but non-authoritative limits for 7 common codes.
 
 ---
 
@@ -208,22 +198,21 @@ These items were identified before audit logging was implemented and resolved in
 
 ---
 
-#### TD-08: `tests/test_rules.py` and `tests/test_orchestrator.py` Are Stubs
+#### TD-08: `tests/test_orchestrator.py` Remains a Stub (Partially Resolved)
 
-**Description:** Two test files exist as docstring-only stubs describing the tests that should be written but have no test functions.
+**Description:** `tests/test_rules.py` was a stub — now resolved with 35 MUE, NCCI, and code_validity tests (Sprint 6). `tests/test_orchestrator.py` is still a docstring-only stub.
 
-**Location:** `tests/test_rules.py`, `tests/test_orchestrator.py`
+**Location:** `tests/test_orchestrator.py`
 
 **Impact:**
-- MUE, NPI, and reference-data code_validity have no test coverage.
-- The orchestrator (when implemented) will have no test coverage at launch.
-- `pytest` reports 35 collected tests; the stub files contribute 0.
+- The orchestrator (when implemented in Phase 7) will have no test coverage at launch.
+- MUE, NCCI, code_validity now have test coverage. NPI still lacks test coverage (pending Phase B).
 
 **Recommended Fix:**
-- `test_rules.py`: implement tests for MUE (MAI=1 → HIGH finding, MAI=2 → MEDIUM), NPI (valid/deactivated/invalid format), and code validity with reference file fixtures.
 - `test_orchestrator.py`: implement tests with mocked LLM responses once the orchestrator is wired. Mock at the Anthropic SDK boundary, not at the Finding level.
+- Add NPI rule tests to `test_rules.py` when `rules/npi.py` is implemented (Phase B).
 
-**Planned Sprint:** Phase 3 (`test_rules.py`); Phase 7 (`test_orchestrator.py`)
+**Planned Sprint:** Phase 7 (`test_orchestrator.py`); Phase B (`test_rules.py` NPI additions)
 
 ---
 
@@ -411,20 +400,23 @@ Add this check gated on whether agents are enabled, so it does not block the cur
 
 | Priority | Count | Resolved | Open |
 |---|---|---|---|
-| High | 11 | 6 (R1–R5 + TD-01) | 5 |
-| Medium | 7 | 1 (TD-07) | 7 (incl. TD-07a, TD-07b) |
+| High | 11 | 8 (R1–R5, TD-01, TD-02, TD-08 partial) | 3 (TD-03, TD-04, TD-05, TD-06) |
+| Medium | 7 | 1 (TD-07) | 6 (TD-07a, TD-07b, TD-08 stub, TD-09, TD-10, TD-11, TD-12) |
 | Low | 5 | 0 | 5 |
 | Sprint 3 additions | 3 | 3 | 0 |
-| **Total** | **26** | **10** | **17** |
+| **Total** | **26** | **12** | **15** |
 
 Items R1–R5 were addressed in the pre-audit model refactor and Sprint 2.
 Items R6–R8 were addressed in Sprint 3 (policy intelligence foundation).
 TD-07 was addressed in Sprint 4 (manual claim intake); replaced by TD-07a (CSV batch) and TD-07b (Luhn NPI).
 TD-01 was addressed in Sprint 5 (file-backed NCCI PTP lookup).
-The 5 remaining open High items (TD-02 through TD-06) represent the core gap between current state and a complete MVP.
+TD-02 was addressed in Sprint 6 (MUE ingestion + units field support). TD-08 partially resolved (test_rules.py filled in; test_orchestrator.py still a stub).
+The remaining open High items (TD-03, TD-04, TD-05, TD-06) represent the core gap: NPI validation, LLM agents, RAG pipeline, and extended code validity rules.
 
 **Sprint 3 note:** Local policy intelligence was introduced using curated public-policy-style references (`data/reference/policy_examples.json`). This makes the citation detail view evidence-backed without requiring CMS API automation, Chroma, or LLM calls. Real CMS/NCCI/LCD/NCD ingestion remains a future replacement point — `retrieval/policy_repository.py` is designed with the same public interface the ChromaDB-backed version will implement.
 
 **Sprint 4 note:** Manual Claim Entry mode is live. Transformation logic (`build_manual_claim`, `get_payer_id`, `validate_npi`, `normalize_code`) lives in `app/claim_intake.py` with no Streamlit dependency, fully unit-tested (28 new tests). The service-line coding grid accepts arbitrary CPT/ICD-10/modifier combinations and flows through the existing rule engine unchanged. Remaining claim intake gaps: CSV batch upload (TD-07a) and Luhn NPI check-digit validation (TD-07b).
 
 **Sprint 5 note:** File-backed NCCI PTP lookup implemented via `rules/ncci_loader.py`. Loads all 4 CMS Practitioner PTP xlsx files (v322r0, effective 2026-07-01) from `data/reference/ncci/` and caches ~1.73M active edit pairs in memory. First load takes ~54 seconds (xlsx reading); subsequent lookups are O(1). Synthetic fallback retained for portability when CMS files are absent. MUE ingestion is intentionally deferred to Phase 3 — only PTP edits are implemented in this sprint.
+
+**Sprint 6 note:** MUE ingestion and units field support implemented (Phase A of the implementation plan). `rules/mue_loader.py` follows the `ncci_loader.py` pattern: file-backed loader from `data/reference/mue/` with column-name discovery, `lru_cache`, and synthetic fallback. `rules/mue.py:check_mue_limits()` returns MAI-aware findings (MAI=1 → HIGH, MAI=2/3 → MEDIUM). Units field support: `build_manual_claim()` now populates `ClaimIn.units`; service-line grid has a Units column; `WORKED_EXAMPLE` updated. 35 new tests added in `tests/test_rules.py` (previously a stub). Total tests: 162 passing. TD-02 resolved. TD-08 partially resolved.

@@ -229,8 +229,8 @@ Replace the single hardcoded NCCI PTP edit pair with a file-backed lookup using 
 
 ## Phase 3 — Complete the Deterministic Layer
 
-**Status:** In Progress (NCCI PTP complete; MUE, NPI, ICD-10-CM remaining)
-**Estimated scope:** 2–3 additional implementation sessions
+**Status:** In Progress — Phase A complete (NCCI PTP + Units + MUE done; NPI and ICD-10-CM remaining)
+**Estimated scope:** 1–2 additional implementation sessions
 
 ### Objectives
 Replace all hardcoded rule data with real CMS reference files. Add NPI live validation. This phase makes the rule layer production-complete before any LLM is introduced.
@@ -238,11 +238,13 @@ Replace all hardcoded rule data with real CMS reference files. Add NPI live vali
 ### Deliverables
 
 **Rule layer — real data:**
-- `rules/ncci.py`: CSV loader for CMS quarterly PTP file; loads all ~250,000+ edit pairs; `doc_id` and `edition` derived from filename
-- `rules/mue.py`: MUE table lookup with MAI-aware severity (MAI=1 → HIGH, MAI=2/3 → MEDIUM); `citation.doc_id` from MUE file edition
-- `rules/npi.py`: Luhn check digit validation; NPPES live REST API client; HIGH finding for deactivated/invalid NPI; graceful timeout handling
-- `rules/code_validity.py`: ICD-10-CM FY reference file loader (replaces Z00.00 hardcode); HCPCS Level II validity; expanded modifier rules
-- `rules/rule_engine.py`: wire MUE and NPI into `review_claim()`; NPI failure short-circuits before NCCI/MUE
+- `rules/ncci.py`: ✅ File-backed xlsx loader; ~1.73M active pairs (v322r0); `doc_id` and `edition` from CMS file
+- `rules/mue_loader.py`: ✅ **NEW (Phase A).** File-backed MUE table loader; column-name discovery; lru_cache; synthetic fallback
+- `rules/mue.py`: ✅ **Implemented (Phase A).** `check_mue_limits()` with MAI-aware severity; wired into rule engine
+- `app/claim_intake.py`: ✅ **Updated (Phase A).** `build_manual_claim()` populates `ClaimIn.units`; units column in service-line grid
+- `rules/npi.py`: 🔜 Luhn check digit validation; NPPES live REST API client; HIGH finding for deactivated/invalid NPI; graceful timeout handling
+- `rules/code_validity.py`: 🔜 ICD-10-CM FY reference file loader (replaces Z00.00 hardcode); HCPCS Level II validity; expanded modifier rules
+- `rules/rule_engine.py`: 🔜 wire NPI into `review_claim()`; NPI failure short-circuits before NCCI/MUE (MUE already wired ✅)
 
 **Reference data:**
 - `data/reference/ncci_ptp_<quarter>.csv` (downloaded, gitignored)
@@ -252,7 +254,7 @@ Replace all hardcoded rule data with real CMS reference files. Add NPI live vali
 - `data/reference/README.md` updated with download instructions
 
 **Tests:**
-- `tests/test_rules.py`: 20+ tests for MUE (MAI=1, MAI=2, limit not exceeded), NPI (valid, deactivated, invalid format, API timeout), HCPCS validity — all using fixture data, no live API
+- `tests/test_rules.py`: ✅ 35 tests implemented (Phase A): MUE (MAI=1/2/3, limits, fallback, file-backed xlsx/csv, multi-code, integration), NCCI regression, code_validity regression. 🔜 NPI tests pending Phase B.
 
 **Cleanup:**
 - `db/audit.py` stub removed or replaced with a comment pointing to `audit_repository.py`
@@ -487,7 +489,7 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 | 2.5 — Policy Intelligence | ✅ | Structured citations, policy detail view, 55 tests | P0 (prep) |
 | 2.75 — Manual Claim Intake | ✅ | Service-line grid, build_manual_claim, 83 tests | P0 |
 | 2.8 — File-Backed NCCI PTP | ✅ | ncci_loader, ~1.73M active pairs, 127 tests | P0 |
-| 3 — Complete Deterministic Layer | 🔄 In Progress | MUE, NPI, ICD-10-CM remaining | P0 |
+| 3 — Complete Deterministic Layer | 🔄 In Progress | Phase A done (Units + MUE); NPI and ICD-10-CM remaining | P0 |
 | 4 — LCD/NCD Retrieval | 🔜 | ChromaDB, CMS ingestion | P0 (dep) |
 | 5 — Coverage Agent | 🔜 | First LLM agent, RAG findings | P0 |
 | 6 — Documentation Agent | 🔜 | Clinical note analysis | P1 |

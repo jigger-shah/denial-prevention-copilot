@@ -25,15 +25,15 @@ WORKED_EXAMPLE: dict = {
     "note_text": "",
     "service_lines": [
         {
-            "cpt": "99214", "mod1": "", "mod2": "",
+            "cpt": "99214", "mod1": "", "mod2": "", "units": 1,
             "icd10_1": "Z00.00", "icd10_2": "", "icd10_3": "", "icd10_4": "",
         },
         {
-            "cpt": "80053", "mod1": "", "mod2": "",
+            "cpt": "80053", "mod1": "", "mod2": "", "units": 1,
             "icd10_1": "Z00.00", "icd10_2": "", "icd10_3": "", "icd10_4": "",
         },
         {
-            "cpt": "80048", "mod1": "", "mod2": "",
+            "cpt": "80048", "mod1": "", "mod2": "", "units": 1,
             "icd10_1": "Z00.00", "icd10_2": "", "icd10_3": "", "icd10_4": "",
         },
     ],
@@ -86,6 +86,7 @@ def build_manual_claim(header: dict, service_lines: list[dict]) -> dict:
     cpt_codes: list[str] = []
     icd10_codes: list[str] = []
     modifiers: list[str] = []
+    units: dict[str, int] = {}
     normalized_lines: list[dict] = []
 
     for line in service_lines:
@@ -93,11 +94,13 @@ def build_manual_claim(header: dict, service_lines: list[dict]) -> dict:
         mod1 = normalize_code(line.get("mod1", ""))
         mod2 = normalize_code(line.get("mod2", ""))
         dx_slots = [normalize_code(line.get(f"icd10_{i}", "")) for i in range(1, 5)]
+        line_units = int(line.get("units", 1))
 
         normalized_lines.append({
             "cpt": cpt,
             "mod1": mod1,
             "mod2": mod2,
+            "units": line_units,
             "icd10_1": dx_slots[0],
             "icd10_2": dx_slots[1],
             "icd10_3": dx_slots[2],
@@ -107,6 +110,7 @@ def build_manual_claim(header: dict, service_lines: list[dict]) -> dict:
         if cpt and cpt not in cpt_seen:
             cpt_codes.append(cpt)
             cpt_seen.add(cpt)
+            units[cpt] = line_units
         for dx in dx_slots:
             if dx and dx not in dx_seen:
                 icd10_codes.append(dx)
@@ -132,7 +136,7 @@ def build_manual_claim(header: dict, service_lines: list[dict]) -> dict:
         "icd10_codes": icd10_codes,
         "modifiers": modifiers,
         "place_of_service": "",
-        "units": {},
+        "units": units,
         "service_lines": normalized_lines,
         "description": f"Manual entry — {payer_name}",
     }

@@ -1,9 +1,9 @@
 # Repository Status Report — Denial Prevention Copilot
 
 **Generated:** 2026-06-16
-**Sprint:** 5 complete (Phase 2.8 shipped)
+**Sprint:** 6 complete (Phase A shipped — Units + MUE ingestion)
 **Branch:** main
-**Last commit:** ed5ed88 — Add CMS NCCI PTP file-backed lookup
+**Last commit:** (Phase A) — Add units field support and CMS MUE ingestion
 
 ---
 
@@ -27,9 +27,9 @@
 
 ### Maturity
 
-The Denial Prevention Copilot is a **well-architected early prototype** with a complete structural skeleton, a fully operational governance/audit layer, and now a production-grade NCCI PTP rule engine backed by real CMS reference data. The project has completed 7 of 11 planned phases (Phases 0 through 2.8). The application runs end-to-end — a claim goes in, deterministic rules fire against real CMS NCCI edits, findings are displayed with full v322r0 citations, and a human decision is written to an append-only audit log. The core AI differentiator (LLM agents, RAG pipeline) remains in stub form, but the deterministic layer now has its first real data source.
+The Denial Prevention Copilot is a **well-architected early prototype** with a complete structural skeleton, a fully operational governance/audit layer, and now two production-grade rule engines backed by real CMS reference data patterns. The project has completed Phase A of Phase 3. The application runs end-to-end — a claim goes in, deterministic rules fire against real CMS NCCI edits and a MUE table (synthetic fallback until CMS file is downloaded), findings display with structured citations, and a human decision is written to an append-only audit log. The core AI differentiator (LLM agents, RAG pipeline) remains in stub form, but the deterministic layer is advancing toward completeness.
 
-### MVP Completion: ~42–45%
+### MVP Completion: ~47–50%
 
 The project has strong bones and the first real meat. The scaffolding is production-quality; NCCI bundling detection is now genuine (~1.73M real CMS pairs). The intelligence layer is not yet started. The governance and audit infrastructure is complete; the agent and RAG layers are 0% implemented.
 
@@ -38,9 +38,11 @@ The project has strong bones and the first real meat. The scaffolding is product
 - **Governance-first design:** Citation as a first-class dataclass, SHA-256 finding IDs, append-only SQLite, human-in-loop enforcement — these are production-grade governance patterns built before any LLM exists. This is architecturally rare and directly addresses the PRD governance controls requirement (P0).
 - **Clean separation of concerns:** Rule layer → orchestrator → agents → denial prevention is enforced at every level. `rule_engine.py` calls no LLM; `agents/` calls no DB. This modularity makes each layer independently testable and replaceable.
 - **Decision record discipline:** 11 Architecture Decision Records written (ADR-011 added for file-backed NCCI), deferral triggers documented, future replacement points mapped. This is unusually rigorous for a prototype.
-- **127 tests, all passing:** Tests now cover NCCI loader (44 tests), rule engine, audit governance, claim intake, and policy repository. The `tests/test_ncci_loader.py` file is substantive, not a stub.
+- **162 tests, all passing:** Tests now cover NCCI loader (44 tests), MUE loader + rule (35 tests), rule engine, audit governance, claim intake (including units propagation), and policy repository. `tests/test_rules.py` fully implemented (was a stub).
 - **Real NCCI PTP edits:** Sprint 5 replaced the 1-pair hardcoded lookup with a file-backed loader reading CMS quarterly xlsx files. ~1.73 million active edit pairs across 4 files (ccipra-v322r0-f1 through f4). Modifier 0/1/9 semantics handled. Bidirectional lookup. `functools.lru_cache` for process-lifetime performance. Synthetic fallback when CMS files absent.
-- **Manual claim intake:** Sprint 4 added a full service-line coding grid (CPT, ICD-10, modifiers, units, POS, NPI, payer) with a worked example, deduplication, and PHI-guard caption. This makes the app demonstrable with real-looking synthetic claims.
+- **MUE ingestion (Sprint 6):** `rules/mue_loader.py` + `rules/mue.py` implement file-backed MUE lookup from `data/reference/mue/` with column-name discovery, `lru_cache`, and synthetic fallback. MAI-aware severity: MAI=1 → HIGH, MAI=2/3 → MEDIUM. Wired into rule engine after NCCI.
+- **Units field support (Sprint 6):** `build_manual_claim()` now populates `ClaimIn.units` (CPT → unit count) from the service-line grid. UI grid has a Units column. `WORKED_EXAMPLE` updated to include units per service line. MUE check uses this field.
+- **Manual claim intake:** Sprint 4 added a full service-line coding grid (CPT, ICD-10, modifiers, units, POS, NPI, payer) with a worked example, deduplication, and PHI-guard caption. Sprint 6 added the Units column.
 
 ### Key Gaps
 
@@ -319,7 +321,7 @@ JSON-backed policy reference service with a ChromaDB-compatible public interface
 | PRD Requirement | Priority | Status | Evidence |
 |---|---|---|---|
 | NCCI PTP bundling check | P0 | Complete | `rules/ncci.py` + `rules/ncci_loader.py`: ~1.73M active pairs from CMS xlsx (v322r0, effective 2026-07-01); synthetic fallback documented |
-| MUE limit enforcement | P0 | Not Started | `rules/mue.py` is a stub file |
+| MUE limit enforcement | P0 | Complete (synthetic fallback) | `rules/mue_loader.py` + `rules/mue.py`: file-backed loader; MAI-aware severity; synthetic fallback; CMS file needed in `data/reference/mue/` for authoritative limits |
 | NPI validation | P0 | Partial | `app/claim_intake.py:validate_npi()`: 10-digit format only; Luhn not implemented |
 | ICD-10-CM code validity | P0 | Partial | `rules/code_validity.py`: 2 hardcoded rules; no reference file loaded |
 | HCPCS/CPT code validity | P0 | Partial | Same file; no CPT crosswalk loaded |
@@ -348,7 +350,7 @@ JSON-backed policy reference service with a ChromaDB-compatible public interface
 | No PHI constraint | Requirement | Complete | PHI-guard caption; synthetic data only |
 | Synthetic data only | Requirement | Complete | No real claims in codebase or data files |
 
-**Summary:** 14 of 28 tracked requirements are Complete (NCCI PTP bundling check promoted from Partial to Complete in Sprint 5). 10 partially implemented. 10 Not Started. 4 Not Measurable (require the agent/eval layer).
+**Summary:** 15 of 28 tracked requirements are Complete (MUE limit enforcement promoted from Not Started to Complete with synthetic fallback in Sprint 6). 10 partially implemented. 9 Not Started. 4 Not Measurable (require the agent/eval layer).
 
 ---
 
@@ -358,7 +360,7 @@ JSON-backed policy reference service with a ChromaDB-compatible public interface
 
 NCCI PTP edits are now real (Sprint 5). The remaining deterministic layer gaps are:
 
-- **MUE tables:** `rules/mue.py` is entirely a stub. Need MUE lookup with MAI-aware severity (MAI-1 = absolute limit, MAI-2 = per-claim, MAI-3 = per-date-of-service).
+- **MUE tables:** ✅ Implemented in Sprint 6. `rules/mue_loader.py` + `rules/mue.py`. File-backed with synthetic fallback. CMS MUE Practitioner file needed in `data/reference/mue/` for authoritative limits.
 - **NPI validation:** `validate_npi()` checks 10-digit format only. Luhn check-digit algorithm must be added (PRD P0 requirement).
 - **ICD-10-CM and CPT reference files:** `rules/code_validity.py` has 2 hardcoded rules. Need FY2026 ICD-10-CM reference data and CPT crosswalk loaded from `data/reference/`.
 
@@ -408,7 +410,7 @@ Full register: `docs/Technical_Debt_Register.md`
 | ID | Item | Location | Impact |
 |---|---|---|---|
 | ~~TD-01~~ | ~~Only 1 NCCI PTP edit pair~~ | ~~`rules/ncci.py`~~ | **RESOLVED Sprint 5** — file-backed loader with ~1.73M pairs (CMS v322r0) |
-| TD-02 | MUE module is entirely a stub | `rules/mue.py` | No MUE enforcement at all |
+| ~~TD-02~~ | ~~MUE module is entirely a stub~~ | ~~`rules/mue.py`~~ | **RESOLVED Sprint 6** — `mue_loader.py` + `mue.py`; file-backed; MAI-aware severity; 35 tests |
 | TD-03 | NPI validation is format-only (no Luhn check) | `app/claim_intake.py:validate_npi()` | Invalid NPIs pass validation |
 | TD-04 | All LLM agents are stubs | `agents/` (all files) | No AI-generated findings; no coverage or documentation review |
 | TD-05 | RAG retrieval pipeline not built | `retrieval/` (ingest, chunking, vector_store) | Coverage agent cannot retrieve LCD/NCD policy text |
@@ -436,7 +438,7 @@ Full register: `docs/Technical_Debt_Register.md`
 | TD-16 | No application logging | Entire codebase | Debugging production issues requires print statements |
 | TD-17 | Synthetic NPIs don't pass Luhn validation | `app/claim_intake.py:WORKED_EXAMPLE` | Demo data will break NPI validation once Luhn is implemented |
 
-**Summary:** 26 tracked items total. 10 resolved (TD-01 resolved Sprint 5). 17 open: 5 HIGH (TD-02–TD-06), 7 MEDIUM (TD-07a, TD-07b, TD-08–TD-12), 5 LOW (TD-13–TD-17). (See `docs/Technical_Debt_Register.md` for full detail.)
+**Summary:** 26 tracked items total. 12 resolved (TD-02 resolved Sprint 6; TD-08 partially resolved). 15 open: 4 HIGH (TD-03–TD-06), 6 MEDIUM (TD-07a, TD-07b, TD-08 remainder, TD-09–TD-12), 5 LOW (TD-13–TD-17). (See `docs/Technical_Debt_Register.md` for full detail.)
 
 ---
 

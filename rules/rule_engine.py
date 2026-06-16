@@ -11,7 +11,7 @@ this module first (deterministic checks) before dispatching agents.
 import hashlib
 
 from rules.models import ClaimIn, Finding
-from rules import ncci, code_validity
+from rules import ncci, mue, code_validity
 
 
 _SEVERITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
@@ -62,6 +62,7 @@ def review_claim(claim: ClaimIn) -> list[Finding]:
     """
     findings: list[Finding] = []
     findings.extend(ncci.check_ncci_pairs(claim))
+    findings.extend(mue.check_mue_limits(claim))
     findings.extend(code_validity.check_code_validity(claim))
     findings.sort(key=lambda f: _SEVERITY_ORDER.get(f.severity, 9))
 

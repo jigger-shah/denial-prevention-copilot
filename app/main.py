@@ -62,8 +62,8 @@ _RISK_CONFIG = {
     "CLEAN": ("🟢 CLEAN — no denial risks identified", "success"),
 }
 
-_SL_COLS = [2.2, 1, 1, 1.5, 1.5, 1.5, 1.5, 0.8]
-_SL_HEADERS = ["CPT / HCPCS", "Mod 1", "Mod 2", "ICD-10 (1)", "ICD-10 (2)", "ICD-10 (3)", "ICD-10 (4)", ""]
+_SL_COLS = [2.0, 0.9, 0.9, 0.7, 1.3, 1.3, 1.3, 1.3, 0.7]
+_SL_HEADERS = ["CPT / HCPCS", "Mod 1", "Mod 2", "Units", "ICD-10 (1)", "ICD-10 (2)", "ICD-10 (3)", "ICD-10 (4)", ""]
 
 
 # ---------------------------------------------------------------------------
@@ -338,6 +338,7 @@ def _load_worked_example() -> None:
     for row_id, line in zip(row_ids, ex["service_lines"]):
         for field in ("cpt", "mod1", "mod2", "icd10_1", "icd10_2", "icd10_3", "icd10_4"):
             st.session_state[f"sl_{row_id}_{field}"] = line[field]
+        st.session_state[f"sl_{row_id}_units"] = line.get("units", 1)
 
 
 # ---------------------------------------------------------------------------
@@ -416,12 +417,13 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
         cols[0].text_input("CPT", key=f"sl_{row_id}_cpt", label_visibility="collapsed", placeholder="99213")
         cols[1].text_input("Mod1", key=f"sl_{row_id}_mod1", label_visibility="collapsed", placeholder="25")
         cols[2].text_input("Mod2", key=f"sl_{row_id}_mod2", label_visibility="collapsed", placeholder="")
-        cols[3].text_input("ICD1", key=f"sl_{row_id}_icd10_1", label_visibility="collapsed", placeholder="Z00.00")
-        cols[4].text_input("ICD2", key=f"sl_{row_id}_icd10_2", label_visibility="collapsed", placeholder="")
-        cols[5].text_input("ICD3", key=f"sl_{row_id}_icd10_3", label_visibility="collapsed", placeholder="")
-        cols[6].text_input("ICD4", key=f"sl_{row_id}_icd10_4", label_visibility="collapsed", placeholder="")
+        cols[3].number_input("Units", key=f"sl_{row_id}_units", min_value=1, max_value=999, value=1, label_visibility="collapsed")
+        cols[4].text_input("ICD1", key=f"sl_{row_id}_icd10_1", label_visibility="collapsed", placeholder="Z00.00")
+        cols[5].text_input("ICD2", key=f"sl_{row_id}_icd10_2", label_visibility="collapsed", placeholder="")
+        cols[6].text_input("ICD3", key=f"sl_{row_id}_icd10_3", label_visibility="collapsed", placeholder="")
+        cols[7].text_input("ICD4", key=f"sl_{row_id}_icd10_4", label_visibility="collapsed", placeholder="")
         if len(active_rows) > 1:
-            if cols[7].button("✕", key=f"sl_rm_{row_id}", help="Remove this service line"):
+            if cols[8].button("✕", key=f"sl_rm_{row_id}", help="Remove this service line"):
                 rows_to_remove.append(row_id)
 
     if rows_to_remove:
@@ -456,6 +458,7 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
                 "cpt": st.session_state.get(f"sl_{row_id}_cpt", ""),
                 "mod1": st.session_state.get(f"sl_{row_id}_mod1", ""),
                 "mod2": st.session_state.get(f"sl_{row_id}_mod2", ""),
+                "units": st.session_state.get(f"sl_{row_id}_units", 1),
                 "icd10_1": st.session_state.get(f"sl_{row_id}_icd10_1", ""),
                 "icd10_2": st.session_state.get(f"sl_{row_id}_icd10_2", ""),
                 "icd10_3": st.session_state.get(f"sl_{row_id}_icd10_3", ""),

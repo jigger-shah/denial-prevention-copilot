@@ -111,7 +111,7 @@ def _header(**overrides) -> dict:
 
 def _line(cpt="99213", icd10_1="J06.9", **overrides) -> dict:
     base = {
-        "cpt": cpt, "mod1": "", "mod2": "",
+        "cpt": cpt, "mod1": "", "mod2": "", "units": 1,
         "icd10_1": icd10_1, "icd10_2": "", "icd10_3": "", "icd10_4": "",
     }
     base.update(overrides)
@@ -244,3 +244,64 @@ def test_manual_claim_finding_ids_stable():
     run1 = review_claim(load_claim(claim_dict))
     run2 = review_claim(load_claim(claim_dict))
     assert run1[0].finding_id == run2[0].finding_id
+
+
+# ---------------------------------------------------------------------------
+# Units propagation
+# ---------------------------------------------------------------------------
+
+def test_build_manual_claim_units_default_to_1():
+    """Service line without explicit units → units[cpt] == 1."""
+    line = {"cpt": "99213", "mod1": "", "mod2": "",
+            "icd10_1": "J06.9", "icd10_2": "", "icd10_3": "", "icd10_4": ""}
+    result = build_manual_claim(_header(), [line])
+    assert result["units"]["99213"] == 1
+
+
+def test_build_manual_claim_explicit_units_propagated():
+    """Explicit units value carried through to claim dict."""
+    result = build_manual_claim(_header(), [_line(cpt="36415", units=3)])
+    assert result["units"]["36415"] == 3
+
+
+def test_build_manual_claim_units_only_for_non_blank_cpt():
+    """Blank CPT lines must not appear in units dict."""
+    lines = [_line(cpt="", units=5), _line(cpt="99213", units=2)]
+    result = build_manual_claim(_header(), lines)
+    assert "" not in result["units"]
+    assert result["units"]["99213"] == 2
+
+
+def test_build_manual_claim_dedup_units_first_line_wins():
+    """When same CPT appears on two lines, first-seen units value is used."""
+    lines = [_line(cpt="99213", units=1), _line(cpt="99213", units=5)]
+    result = build_manual_claim(_header(), lines)
+    assert result["units"]["99213"] == 1
+
+
+def test_build_manual_claim_multiple_cpts_each_get_units():
+    """Different CPTs on different lines each get their own units entry."""
+    lines = [_line(cpt="99214", units=1), _line(cpt="80053", units=2)]
+    result = build_manual_claim(_header(), lines)
+    assert result["units"]["99214"] == 1
+    assert result["units"]["80053"] == 2
+
+
+def test_build_manual_claim_units_passed_to_load_claim():
+    """Units from build_manual_claim() must survive load_claim() round-trip."""
+    result = build_manual_claim(_header(), [_line(cpt="36415", units=3)])
+    claim = load_claim(result)
+    assert claim.units["36415"] == 3
+
+
+def test_worked_example_has_units():
+    """WORKED_EXAMPLE service lines all have a 'units' key."""
+    for line in WORKED_EXAMPLE["service_lines"]:
+        assert "units" in line, f"Service line missing 'units': {line}"
+
+
+def test_worked_example_units_are_positive():
+    """WORKED_EXAMPLE units are positive integers."""
+    for line in WORKED_EXAMPLE["service_lines"]:
+        assert isinstance(line["units"], int)
+        assert line["units"] >= 1

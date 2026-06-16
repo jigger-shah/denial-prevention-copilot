@@ -1,5 +1,17 @@
 [
   {
+    "document_id": "CMS_MUE_PRACTITIONER_Q32026",
+    "source_type": "MUE",
+    "title": "CMS NCCI Medically Unlikely Edits — Practitioner Services (Q3 2026)",
+    "section": "Practitioner Services MUE Table",
+    "effective_date": "2026-07-01",
+    "edition": "Q3 2026",
+    "source_url": "https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits/medicare-ncci-medically-unlikely-edits",
+    "excerpt": "Medically Unlikely Edits (MUEs) define the maximum units of service a provider would bill for a single beneficiary on a single date of service. MAI 1 = absolute per-line limit (hard denial, cannot be bypassed by modifier or documentation). MAI 2 = date-of-service edit across all claim lines for the same DOS. MAI 3 = date-of-service edit where clinical rationale documentation may allow bypass. Reporting units in excess of the MUE value is a denial trigger for all MAI levels; MAI 1 limits are not bypassable.",
+    "applies_to_codes": [],
+    "notes": "Download quarterly from the CMS NCCI MUE page. Place the Practitioner Services MUE xlsx file in data/reference/mue/. Update MUE_VERSION and MUE_EFFECTIVE_DATE in rules/mue_loader.py and restart the application to reload."
+  },
+  {
     "document_id": "CMS_NCCI_PTP_v322r0",
     "source_type": "NCCI",
     "title": "CMS NCCI Practitioner PTP Edit Files — v322r0 (Effective July 1, 2026)",
