@@ -107,11 +107,11 @@
 
 > "Under a second. Three findings.
 >
-> **Finding 1 — HIGH: Bundled code pair.** 80048, a basic metabolic panel, is bundled into 80053, the comprehensive panel. Billing both is a CO-97 denial. The citation here is the NCCI PTP edit table. Modifier indicator 0 means no bypass — this is a hard bundling rule.
+> **Finding 1 — HIGH: Bundled code pair.** 80048, a basic metabolic panel, is bundled into 80053, the comprehensive panel. Billing both is a CO-97 denial. The citation is the CMS NCCI Practitioner PTP edit table, version v322r0, effective July 1, 2026. Modifier indicator 0 means no bypass — this is a hard bundling rule.
 >
 > [Expand 'View source excerpt']
 >
-> The system shows the exact policy excerpt: '80053 col 1 / 80048 col 2 — modifier indicator 0.' That excerpt is what a coding specialist would verify manually. The system surfaces it in one click.
+> The excerpt comes directly from the CMS quarterly file: '80048 (component) is a component of 80053 (comprehensive). Modifier indicator 0: no bypass allowed. Source: ccipra-v322r0-f4.xlsx.' This is not a placeholder — it is the real CMS NCCI data loaded at startup. The coding specialist can verify it against the CMS download at any time.
 >
 > **Finding 2 — HIGH: Diagnosis conflict.** Z00.00 is a well-visit code — no abnormal findings. Billing it with 99214, a problem-oriented E/M, is a medical necessity mismatch. The citation is the ICD-10-CM coding guideline for Z00.00.
 >

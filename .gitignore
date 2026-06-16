@@ -176,6 +176,11 @@ __marimo__/
 .DS_Store
 
 # Project-specific: large reference data downloads (fetched by ingestion scripts)
+data/reference/ncci/
+data/reference/**/*.csv
+data/reference/**/*.xlsx
+data/reference/**/*.zip
+data/reference/**/*.txt
 data/reference/*.csv
 data/reference/*.xlsx
 data/reference/*.zip
@@ -185,5 +190,8 @@ data/reference/*.txt
 retrieval/chroma_db/
 
 # Project-specific: SQLite audit database
+*.db
+*.sqlite
+*.sqlite3
 db/*.sqlite
 db/*.db

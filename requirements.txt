@@ -1,6 +1,7 @@
 streamlit
 anthropic
 pandas
+openpyxl
 requests
 chromadb
 pydantic

@@ -1,8 +1,8 @@
 # Technical Debt Register
 ## Denial Prevention Copilot
 
-**Last updated:** June 2026  
-**Scope:** All known technical debt as of Sprint 4 (manual claim intake)
+**Last updated:** June 2026
+**Scope:** All known technical debt as of Sprint 5 (file-backed NCCI PTP lookup)
 
 Priority definitions:
 - **High** — blocks a P0 PRD requirement, a core demo scenario, or correct audit behavior
@@ -38,6 +38,7 @@ These items were identified before audit logging was implemented and resolved in
 | ID | Description | Resolution |
 |---|---|---|
 | ~~TD-07~~ | No manual claim intake — demo limited to 5 fixed synthetic claims | `app/claim_intake.py` + Manual Claim Entry mode in `app/main.py`; service-line coding grid, payer mapping, NPI format validation, Load Worked Example; `load_claim()` updated for backward compat |
+| ~~TD-01~~ | Only 1 hardcoded NCCI PTP edit pair (of ~250,000+) | `rules/ncci_loader.py` loads all 4 CMS xlsx files; `rules/ncci.py` uses file-backed lookup with synthetic fallback; ~1.73M active pairs now available; 44 new tests |
 
 ---
 
@@ -47,24 +48,11 @@ These items were identified before audit logging was implemented and resolved in
 
 ---
 
-#### TD-01: Only One Hardcoded NCCI PTP Edit Pair
+#### ~~TD-01: Only One Hardcoded NCCI PTP Edit Pair~~ — RESOLVED Sprint 5
 
-**Description:** `rules/ncci.py` loads a single edit pair (`80053` / `80048`) from an in-memory list. The real CMS NCCI PTP table contains ~250,000+ edit pairs covering virtually every CPT code combination.
+**Resolution:** `rules/ncci_loader.py` loads all 4 CMS NCCI Practitioner PTP xlsx files (v322r0, effective 2026-07-01) from `data/reference/ncci/`. `rules/ncci.py` uses the file-backed lookup with a synthetic fallback when files are absent. ~1.73M active edit pairs now available. 44 new tests cover discovery, loading, lookup, and fallback behavior.
 
-**Location:** `rules/ncci.py:_load_ptp_edits()`
-
-**Impact:**
-- The NCCI check is essentially non-functional for any claim that does not happen to bill both 80053 and 80048.
-- Every demo claim other than CLM-001 and CLM-003 produces zero NCCI findings, regardless of what codes are billed.
-- Claiming "NCCI validation" in a demo while running one hardcoded pair is misleading if the audience looks closely.
-
-**Recommended Fix:**
-1. Download the current CMS NCCI PTP file (free, quarterly, CSV) to `data/reference/ncci_ptp_<quarter>.csv`.
-2. Implement `_load_ptp_edits()` to read and cache the CSV with columns: `col1`, `col2`, `modifier_indicator`, `effective_date`.
-3. Derive `doc_id` from the filename (e.g., `"NCCI-PTP-2026Q2"`) and `edition` from the quarter.
-4. Add a gitignore entry for `data/reference/*.csv` (already present).
-
-**Planned Sprint:** Phase 3 — Complete Deterministic Layer
+**Remaining note:** First load takes ~54s (xlsx reading); cached for process lifetime via `functools.lru_cache`. A future sprint could pre-serialize to pickle/parquet for faster startup if needed.
 
 ---
 
@@ -370,20 +358,20 @@ Add this check gated on whether agents are enabled, so it does not block the cur
 
 ---
 
-#### TD-15: Citation Edition Is `"synthetic sample"` Throughout
+#### TD-15: Citation Edition Is `"synthetic sample"` for Code Validity Rules
 
-**Description:** Every `Citation.edition` field is set to `"synthetic sample"`. In production, this should be the quarter string (NCCI) or fiscal year (ICD-10-CM) of the reference file consulted.
+**Description:** NCCI PTP citations now use `edition = "v322r0"` and `effective_date = "2026-07-01"` from the real CMS files. However, `rules/code_validity.py` still uses `"ICD-10-CM FY2026 (sample reference)"` and `"NCCI Policy Manual for Medicare Services, effective January 2024 (sample reference)"`.
 
-**Location:** `rules/ncci.py`, `rules/code_validity.py`
+**Location:** `rules/code_validity.py`
 
 **Impact:**
-- Audit log shows `"synthetic sample"` for every edition — not traceable to a real policy snapshot.
-- A compliance reviewer looking at an export cannot verify which version of the NCCI was consulted.
-- Low impact for demo; meaningful for governance claims.
+- NCCI findings are now fully traceable to the real CMS edition. ✅
+- Code validity findings (Z00.00 dx conflict, modifier 25) still show synthetic edition labels.
+- Low impact for demo; partially meaningful for governance claims.
 
-**Recommended Fix:** When real CMS CSV files are loaded, derive the edition from the filename or file header and pass it through to the `Citation` object. This is already the design intent — the field exists for this purpose.
+**Recommended Fix:** When ICD-10-CM FY reference files are loaded in Phase 3, derive edition and effective_date from the file header and pass through to Citation.
 
-**Planned Sprint:** Phase 3 (when real reference files are loaded)
+**Planned Sprint:** Phase 3 (when ICD-10-CM reference files are loaded)
 
 ---
 
@@ -423,17 +411,20 @@ Add this check gated on whether agents are enabled, so it does not block the cur
 
 | Priority | Count | Resolved | Open |
 |---|---|---|---|
-| High | 11 | 5 | 6 |
+| High | 11 | 6 (R1–R5 + TD-01) | 5 |
 | Medium | 7 | 1 (TD-07) | 7 (incl. TD-07a, TD-07b) |
 | Low | 5 | 0 | 5 |
 | Sprint 3 additions | 3 | 3 | 0 |
-| **Total** | **26** | **9** | **18** |
+| **Total** | **26** | **10** | **17** |
 
-Items R1–R5 were addressed in the pre-audit model refactor and Sprint 2.  
-Items R6–R8 were addressed in Sprint 3 (policy intelligence foundation).  
-TD-07 was addressed in Sprint 4 (manual claim intake); replaced by TD-07a (CSV batch) and TD-07b (Luhn NPI).  
-The 6 open High items (TD-01 through TD-06) represent the core gap between current state and a complete MVP.
+Items R1–R5 were addressed in the pre-audit model refactor and Sprint 2.
+Items R6–R8 were addressed in Sprint 3 (policy intelligence foundation).
+TD-07 was addressed in Sprint 4 (manual claim intake); replaced by TD-07a (CSV batch) and TD-07b (Luhn NPI).
+TD-01 was addressed in Sprint 5 (file-backed NCCI PTP lookup).
+The 5 remaining open High items (TD-02 through TD-06) represent the core gap between current state and a complete MVP.
 
 **Sprint 3 note:** Local policy intelligence was introduced using curated public-policy-style references (`data/reference/policy_examples.json`). This makes the citation detail view evidence-backed without requiring CMS API automation, Chroma, or LLM calls. Real CMS/NCCI/LCD/NCD ingestion remains a future replacement point — `retrieval/policy_repository.py` is designed with the same public interface the ChromaDB-backed version will implement.
 
 **Sprint 4 note:** Manual Claim Entry mode is live. Transformation logic (`build_manual_claim`, `get_payer_id`, `validate_npi`, `normalize_code`) lives in `app/claim_intake.py` with no Streamlit dependency, fully unit-tested (28 new tests). The service-line coding grid accepts arbitrary CPT/ICD-10/modifier combinations and flows through the existing rule engine unchanged. Remaining claim intake gaps: CSV batch upload (TD-07a) and Luhn NPI check-digit validation (TD-07b).
+
+**Sprint 5 note:** File-backed NCCI PTP lookup implemented via `rules/ncci_loader.py`. Loads all 4 CMS Practitioner PTP xlsx files (v322r0, effective 2026-07-01) from `data/reference/ncci/` and caches ~1.73M active edit pairs in memory. First load takes ~54 seconds (xlsx reading); subsequent lookups are O(1). Synthetic fallback retained for portability when CMS files are absent. MUE ingestion is intentionally deferred to Phase 3 — only PTP edits are implemented in this sprint.

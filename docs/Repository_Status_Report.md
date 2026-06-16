@@ -1,9 +1,9 @@
 # Repository Status Report — Denial Prevention Copilot
 
 **Generated:** 2026-06-15
-**Sprint:** 4 complete (Phase 2.75 shipped)
+**Sprint:** 5 complete (Phase 2.8 shipped)
 **Branch:** main
-**Last commit:** c0d81cd — Manual claim intake with service-line coding grid
+**Last commit:** Sprint 5 — File-backed NCCI PTP lookup (~1.73M active edit pairs, CMS v322r0)
 
 ---
 
@@ -27,26 +27,27 @@
 
 ### Maturity
 
-The Denial Prevention Copilot is a **well-architected early prototype** with a complete structural skeleton and a fully operational governance/audit layer. The project has completed 6 of 11 planned phases (Phases 0 through 2.75). The application runs end-to-end — a claim goes in, deterministic rules fire, findings are displayed, and a human decision is written to an append-only audit log. However, the core AI differentiator (LLM agents, RAG pipeline, real CMS reference data) is entirely in stub form.
+The Denial Prevention Copilot is a **well-architected early prototype** with a complete structural skeleton, a fully operational governance/audit layer, and now a production-grade NCCI PTP rule engine backed by real CMS reference data. The project has completed 7 of 11 planned phases (Phases 0 through 2.8). The application runs end-to-end — a claim goes in, deterministic rules fire against real CMS NCCI edits, findings are displayed with full v322r0 citations, and a human decision is written to an append-only audit log. The core AI differentiator (LLM agents, RAG pipeline) remains in stub form, but the deterministic layer now has its first real data source.
 
-### MVP Completion: ~35–40%
+### MVP Completion: ~40–45%
 
-The project has strong bones but thin meat. The scaffolding is production-quality; the intelligence layer is not yet started.
+The project has strong bones and the first real meat. The scaffolding is production-quality; NCCI bundling detection is now genuine. The intelligence layer is not yet started.
 
 ### Strengths
 
 - **Governance-first design:** Citation as a first-class dataclass, SHA-256 finding IDs, append-only SQLite, human-in-loop enforcement — these are production-grade governance patterns built before any LLM exists. This is architecturally rare and directly addresses the PRD governance controls requirement (P0).
 - **Clean separation of concerns:** Rule layer → orchestrator → agents → denial prevention is enforced at every level. `rule_engine.py` calls no LLM; `agents/` calls no DB. This modularity makes each layer independently testable and replaceable.
-- **Decision record discipline:** 10 Architecture Decision Records written, deferral triggers documented, future replacement points mapped. This is unusually rigorous for a prototype.
-- **83 tests, all passing:** Tests cover audit governance, claim intake, policy repository, and rule engine. The test suite is a credible signal of engineering judgment, not just line count.
+- **Decision record discipline:** 11 Architecture Decision Records written (ADR-011 added for file-backed NCCI), deferral triggers documented, future replacement points mapped. This is unusually rigorous for a prototype.
+- **127 tests, all passing:** Tests now cover NCCI loader (44 tests), rule engine, audit governance, claim intake, and policy repository. The `tests/test_ncci_loader.py` file is substantive, not a stub.
+- **Real NCCI PTP edits:** Sprint 5 replaced the 1-pair hardcoded lookup with a file-backed loader reading CMS quarterly xlsx files. ~1.73 million active edit pairs across 4 files (ccipra-v322r0-f1 through f4). Modifier 0/1/9 semantics handled. Bidirectional lookup. `functools.lru_cache` for process-lifetime performance. Synthetic fallback when CMS files absent.
 - **Manual claim intake:** Sprint 4 added a full service-line coding grid (CPT, ICD-10, modifiers, units, POS, NPI, payer) with a worked example, deduplication, and PHI-guard caption. This makes the app demonstrable with real-looking synthetic claims.
 
 ### Key Gaps
 
 - **All four PRD agents are stubs** — `agents/` contains only docstrings. No LLM call has been made.
-- **Rule data is synthetic** — 1 NCCI pair, 2 code-validity rules, 0 MUE entries, 0 NPI Luhn check.
+- **Rule data mostly synthetic** — NCCI is now real (~1.73M pairs). Code validity still has 2 hardcoded rules. MUE is a stub. NPI has no Luhn check.
 - **RAG pipeline not built** — `retrieval/chunking.py`, `retrieval/ingest.py`, `retrieval/vector_store.py` are empty modules. No CMS LCD/NCD has been ingested.
-- **Accuracy unverifiable** — The PRD targets ≥90% precision and ≥85% recall. With synthetic rule data and no agents, these cannot be evaluated.
+- **Accuracy unverifiable** — The PRD targets ≥90% precision and ≥85% recall. With no agents, these cannot be evaluated.
 
 ---
 
@@ -74,7 +75,8 @@ The project has strong bones but thin meat. The scaffolding is production-qualit
                         │                   │
               ┌─────────▼────┐    ┌─────────▼────────┐
               │ rules/ncci.py│    │rules/code_        │
-              │ (1 PTP pair) │    │validity.py        │
+              │ + ncci_loader│    │validity.py        │
+              │ (~1.73M pairs│    │(2 hardcoded rules)│
               │              │    │(2 hardcoded rules)│
               └─────────┬────┘    └─────────┬────────┘
                         └────────┬──────────┘
@@ -126,7 +128,7 @@ The project has strong bones but thin meat. The scaffolding is production-qualit
 | UI (two modes) | `app/main.py` | Active | Streamlit app: sample mode + manual claim entry, findings display, human decision panel |
 | Claim intake | `app/claim_intake.py` | Active | Build `ClaimIn` from service-line grid; payer lookup; NPI format check; code normalization |
 | Rule engine | `rules/rule_engine.py` | Active | Dispatch to all rule modules; stamp SHA-256 finding_id; sort HIGH→MEDIUM→LOW |
-| NCCI PTP check | `rules/ncci.py` | Partial | 1 hardcoded edit pair (80053/80048); swap point documented |
+| NCCI PTP check | `rules/ncci.py`, `rules/ncci_loader.py` | Active | File-backed loader; ~1.73M active pairs from CMS xlsx (v322r0); synthetic fallback when files absent |
 | Code validity | `rules/code_validity.py` | Partial | 2 hardcoded rules (Z00.00 + problem E/M conflict; missing modifier 25) |
 | Shared models | `rules/models.py` | Active | `ClaimIn`, `Citation`, `Finding` dataclasses |
 | Audit repository | `db/audit_repository.py` | Active | `AuditDecision` dataclass; append-only SQLite; governance enforcement at save |
@@ -139,7 +141,7 @@ User enters claim (manual grid or sample)
   → build_manual_claim() normalizes codes, deduplicates, adds payer_id
   → rule_engine.load_claim() constructs ClaimIn
   → rule_engine.review_claim():
-      ncci.check_ncci_pairs()      → 0 or 1 Finding (1 known pair)
+      ncci.check_ncci_pairs()      → 0–N Findings (real CMS ~1.73M pairs, v322r0)
       code_validity.check_code_validity() → 0–N Findings
       Findings sorted HIGH → MEDIUM → LOW
       finding_id stamped: SHA-256(claim_id:rule:issue)[:12]
@@ -195,13 +197,13 @@ Every `Finding` carries exactly one `Citation`. Rule layer citations are synthet
 
 | Attribute | Value |
 |---|---|
-| Status | Partial — framework complete, data synthetic |
-| Files | `rules/rule_engine.py`, `rules/ncci.py`, `rules/code_validity.py`, `rules/models.py` |
+| Status | Partial — NCCI now real; code validity still synthetic |
+| Files | `rules/rule_engine.py`, `rules/ncci.py`, `rules/ncci_loader.py`, `rules/code_validity.py`, `rules/models.py` |
 
 The rule engine dispatches to all registered rule modules in a deterministic, synchronous pattern. Adding a new rule module requires one import and one function call — no registration framework needed. SHA-256 finding IDs are stamped post-dispatch so rule modules don't need claim context.
 
-**What works:** Architecture, dispatch pattern, finding aggregation, severity sorting, ID stamping.
-**What's fake:** NCCI has 1 of ~250,000 pairs. Code validity has 2 of thousands of rules. MUE and NPI modules are stubs.
+**What works:** Architecture, dispatch pattern, finding aggregation, severity sorting, ID stamping. NCCI PTP checks now use real CMS quarterly data (~1.73M active pairs, v322r0 effective 2026-07-01). `functools.lru_cache` on `_build_edit_table()` means xlsx files load once per process (~54s first load, then O(1)). Bidirectional lookup, modifier 0/1/9 semantics, and a synthetic fallback when xlsx files are absent.
+**What's fake:** Code validity has 2 of thousands of rules. MUE module is a stub. NPI module is a stub (format-only check in `claim_intake.py`).
 
 ### Feature 2: Citation System (First-Class Dataclass)
 
@@ -289,16 +291,17 @@ JSON-backed policy reference service with a ChromaDB-compatible public interface
 
 | Attribute | Value |
 |---|---|
-| Status | 83 tests passing; 2 test files are stubs |
-| Files | `tests/test_audit.py`, `tests/test_claim_intake.py`, `tests/test_policy_repository.py`, `tests/test_rule_engine.py`, `tests/test_rules.py`, `tests/test_orchestrator.py` |
+| Status | 127 tests passing; `test_orchestrator.py` is a stub; `test_rules.py` has real coverage |
+| Files | `tests/test_audit.py`, `tests/test_claim_intake.py`, `tests/test_policy_repository.py`, `tests/test_rule_engine.py`, `tests/test_rules.py`, `tests/test_ncci_loader.py`, `tests/test_orchestrator.py` |
 
 | Test File | Lines | Coverage Focus |
 |---|---|---|
 | `test_audit.py` | 202 | Audit repository governance, CSV export, schema migration |
-| `test_claim_intake.py` | 246 | Payer lookup, NPI format check, code normalization, build_manual_claim (28 tests confirmed) |
+| `test_claim_intake.py` | 246 | Payer lookup, NPI format check, code normalization, build_manual_claim |
 | `test_policy_repository.py` | 317 | Policy lookup by code, document ID, citation detail |
 | `test_rule_engine.py` | 279 | Rule dispatch, finding_id stamping, severity sorting |
-| `test_rules.py` | 19 | Stub — placeholder tests only |
+| `test_ncci_loader.py` | ~420 | File discovery, xlsx loading, active/deleted filter, bidirectional lookup, file-backed findings, synthetic fallback, real-file integration (44 tests) |
+| `test_rules.py` | 19 | NCCI pair detection, code validity rules |
 | `test_orchestrator.py` | 15 | Stub — placeholder tests only |
 
 ### Feature 11: Architecture Documentation
@@ -308,7 +311,7 @@ JSON-backed policy reference service with a ChromaDB-compatible public interface
 | Status | Complete |
 | Files | `docs/Architecture_Decisions.md`, `docs/Technical_Debt_Register.md`, `docs/Roadmap.md`, `CLAUDE.md` |
 
-10 ADRs written with context, decision, rationale, tradeoffs, and future replacement points. 5 deferred decisions documented with explicit triggers. 18 open tech debt items tracked with severity. 11-phase roadmap with milestone commits.
+11 ADRs written with context, decision, rationale, tradeoffs, and future replacement points (ADR-011 added for file-backed NCCI PTP lookup with synthetic fallback). 5 deferred decisions documented with explicit triggers. 17 open tech debt items tracked with severity (TD-01 resolved in Sprint 5). 11-phase roadmap with milestone commits.
 
 ---
 
@@ -316,7 +319,7 @@ JSON-backed policy reference service with a ChromaDB-compatible public interface
 
 | PRD Requirement | Priority | Status | Evidence |
 |---|---|---|---|
-| NCCI PTP bundling check | P0 | Partial | `rules/ncci.py`: 1 edit pair hardcoded; swap point documented |
+| NCCI PTP bundling check | P0 | Complete | `rules/ncci.py` + `rules/ncci_loader.py`: ~1.73M active pairs from CMS xlsx (v322r0, effective 2026-07-01); synthetic fallback documented |
 | MUE limit enforcement | P0 | Not Started | `rules/mue.py` is a stub file |
 | NPI validation | P0 | Partial | `app/claim_intake.py:validate_npi()`: 10-digit format only; Luhn not implemented |
 | ICD-10-CM code validity | P0 | Partial | `rules/code_validity.py`: 2 hardcoded rules; no reference file loaded |
@@ -346,17 +349,16 @@ JSON-backed policy reference service with a ChromaDB-compatible public interface
 | No PHI constraint | Requirement | Complete | PHI-guard caption; synthetic data only |
 | Synthetic data only | Requirement | Complete | No real claims in codebase or data files |
 
-**Summary:** 13 of 28 tracked requirements are Complete or Partially implemented. 11 are Not Started. 4 are Not Measurable (require the agent/eval layer).
+**Summary:** 14 of 28 tracked requirements are Complete (NCCI PTP bundling check promoted from Partial to Complete in Sprint 5). 10 partially implemented. 10 Not Started. 4 Not Measurable (require the agent/eval layer).
 
 ---
 
 ## 5. Remaining Gaps
 
-### Gap 1: Deterministic Layer Completion (Phase 3)
+### Gap 1: Deterministic Layer Completion (Phase 3 — NCCI complete, remainder pending)
 
-The rule engine framework is complete but the data underneath it is synthetic. This is the highest-leverage next step because it unblocks every downstream capability.
+NCCI PTP edits are now real (Sprint 5). The remaining deterministic layer gaps are:
 
-- **NCCI PTP edits:** Need to load the real CMS quarterly CSV (~250,000 edit pairs). Swap point is `rules/ncci.py:_load_ptp_edits()`. Public interface unchanged.
 - **MUE tables:** `rules/mue.py` is entirely a stub. Need MUE lookup with MAI-aware severity (MAI-1 = absolute limit, MAI-2 = per-claim, MAI-3 = per-date-of-service).
 - **NPI validation:** `validate_npi()` checks 10-digit format only. Luhn check-digit algorithm must be added (PRD P0 requirement).
 - **ICD-10-CM and CPT reference files:** `rules/code_validity.py` has 2 hardcoded rules. Need FY2026 ICD-10-CM reference data and CPT crosswalk loaded from `data/reference/`.
@@ -406,7 +408,7 @@ Full register: `docs/Technical_Debt_Register.md`
 
 | ID | Item | Location | Impact |
 |---|---|---|---|
-| TD-01 | Only 1 NCCI PTP edit pair (of ~250,000+) | `rules/ncci.py:_load_ptp_edits()` | Claims with real bundling issues not caught |
+| ~~TD-01~~ | ~~Only 1 NCCI PTP edit pair~~ | ~~`rules/ncci.py`~~ | **RESOLVED Sprint 5** — file-backed loader with ~1.73M pairs (CMS v322r0) |
 | TD-02 | MUE module is entirely a stub | `rules/mue.py` | No MUE enforcement at all |
 | TD-03 | NPI validation is format-only (no Luhn check) | `app/claim_intake.py:validate_npi()` | Invalid NPIs pass validation |
 | TD-04 | All LLM agents are stubs | `agents/` (all files) | No AI-generated findings; no coverage or documentation review |
@@ -431,11 +433,11 @@ Full register: `docs/Technical_Debt_Register.md`
 |---|---|---|---|
 | TD-13 | app/components/ are all stubs | `app/components/` | `main.py` grows unbounded; rendering logic not extractable |
 | TD-14 | requirements.txt lists unused deps (chromadb, pydantic) | `requirements.txt` | Increases install size; pydantic not yet used |
-| TD-15 | Citation edition says "synthetic sample" throughout | `rules/ncci.py`, `rules/code_validity.py` | Citations not traceable to real policy versions |
+| TD-15 | Citation edition says "synthetic sample" for code validity | `rules/code_validity.py` | NCCI citations now real (v322r0); code_validity citations still hardcoded |
 | TD-16 | No application logging | Entire codebase | Debugging production issues requires print statements |
 | TD-17 | Synthetic NPIs don't pass Luhn validation | `app/claim_intake.py:WORKED_EXAMPLE` | Demo data will break NPI validation once Luhn is implemented |
 
-**Summary:** 26 tracked items total. 9 resolved. 17 open: 6 HIGH, 7 MEDIUM, 4 LOW.
+**Summary:** 26 tracked items total. 10 resolved (TD-01 resolved Sprint 5). 16 open: 5 HIGH, 7 MEDIUM, 4 LOW.
 
 ---
 
@@ -443,13 +445,13 @@ Full register: `docs/Technical_Debt_Register.md`
 
 Scores are 0–100. 100 = production-quality, no gaps for the stated purpose.
 
-### Portfolio Demo Readiness: 48 / 100
+### Portfolio Demo Readiness: 54 / 100
 
-**What works:** The app runs. A reviewer can enter a claim, see findings with cited sources, make a decision, and view an audit trail. The governance story (citation-required, append-only audit, override enforcement) is compelling and demonstrable.
+**What works:** The app runs. A reviewer can enter a claim, see findings with cited sources (now backed by real CMS NCCI v322r0 data), make a decision, and view an audit trail. The NCCI finding now shows the actual CMS source file (ccipra-v322r0-f4.xlsx), version (v322r0), and effective date (2026-07-01). The governance story (citation-required, append-only audit, override enforcement) is compelling and demonstrable.
 
-**What's missing:** All findings come from 3 hardcoded rules. The LLM agents shown in the architecture diagram don't exist. A technical interviewer who probes "show me the coverage agent" finds a docstring. The policy repository shows 5 synthetic entries. The demo is convincing for 60 seconds; under scrutiny it exposes the scaffolding.
+**What's missing:** LLM agents shown in the architecture diagram don't exist. A technical interviewer who probes "show me the coverage agent" finds a docstring. Code validity findings still come from 2 hardcoded rules. The demo is convincing with NCCI findings; the coverage gap remains visible.
 
-**Ceiling:** A polished demo with real NCCI data and one working LLM agent would score 75+.
+**Ceiling:** One working LLM agent with real citations would score 75+.
 
 ---
 
@@ -463,19 +465,19 @@ Scores are 0–100. 100 = production-quality, no gaps for the stated purpose.
 
 ---
 
-### Director of Engineering Interview Readiness: 62 / 100
+### Director of Engineering Interview Readiness: 65 / 100
 
-**What works:** Architecture decisions are documented with context and tradeoffs. The rule-before-LLM constraint is enforced, not aspirational. The append-only audit pattern is production-grade. SHA-256 finding IDs are stable across restarts. The test suite demonstrates governance invariants, not just happy paths.
+**What works:** Architecture decisions are documented with context and tradeoffs (11 ADRs including ADR-011 on NCCI file-backed loading with performance characteristics). The rule-before-LLM constraint is enforced. The append-only audit pattern is production-grade. SHA-256 finding IDs are stable. 127 tests passing, including substantive NCCI loader tests (not stubs). `functools.lru_cache` on `_build_edit_table()` with documented first-load latency (~54s) and test isolation strategy (`_clear_ncci_cache()`) shows production thinking.
 
-**What's missing:** No CI/CD, no deployment story, no secrets management (TD-12), no logging (TD-16). Two test files are stubs. The agent layer is entirely absent. A director will ask "how do you test LLM output consistency?" and the answer today is "we don't have agents yet."
+**What's missing:** No CI/CD, no deployment story, no secrets management (TD-12), no logging (TD-16). One test file stub remains (`test_orchestrator.py`). The agent layer is entirely absent.
 
 **Ceiling:** Adding CI, secrets guard, and one working agent with evaluation would score 80+.
 
 ---
 
-### AI PM Interview Readiness: 58 / 100
+### AI PM Interview Readiness: 60 / 100
 
-**What works:** The RAG architecture is correctly specified (chunking → ChromaDB → LLM reasoning → cited finding). The citation-first constraint ("no citation → no finding") shows understanding of LLM hallucination risk in healthcare. Policy repository interface designed for ChromaDB drop-in replacement — a thoughtful abstraction.
+**What works:** The RAG architecture is correctly specified (chunking → ChromaDB → LLM reasoning → cited finding). The citation-first constraint ("no citation → no finding") shows understanding of LLM hallucination risk in healthcare. Policy repository interface designed for ChromaDB drop-in replacement — a thoughtful abstraction. The NCCI loader demonstrates data pipeline thinking: dtype handling for integer-stored Excel cells, usecols optimization (5 of 7 columns), active-pair filtering, caching strategy, and graceful fallback — all documented.
 
 **What's missing:** No LLM has been called. The coverage validation agent (the most demanding AI task) doesn't exist. Can't speak to prompt engineering, retrieval quality, or latency from experience. The model choice (claude-sonnet-4-6) is documented but untested.
 

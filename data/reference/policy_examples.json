@@ -1,5 +1,17 @@
 [
   {
+    "document_id": "CMS_NCCI_PTP_v322r0",
+    "source_type": "NCCI",
+    "title": "CMS NCCI Practitioner PTP Edit Files — v322r0 (Effective July 1, 2026)",
+    "section": "Practitioner PTP Edits",
+    "effective_date": "2026-07-01",
+    "edition": "v322r0",
+    "source_url": "https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits",
+    "excerpt": "The CMS National Correct Coding Initiative (NCCI) Practitioner PTP edit files define code pairs where one code (Column 2, component) is bundled with another (Column 1, comprehensive). Billing both codes on the same claim constitutes unbundling and will result in denial of the Column 2 code. Modifier indicator 0 = no bypass allowed; indicator 1 = a modifier may allow separate billing if clinically appropriate and documented; indicator 9 = edit not applicable for this pair.",
+    "applies_to_codes": [],
+    "notes": "Version v322r0, effective July 1, 2026. Source files: ccipra-v322r0-f1.xlsx through ccipra-v322r0-f4.xlsx (~1.73 million active edit pairs). Update quarterly: download new Practitioner PTP xlsx files from the CMS NCCI page, place in data/reference/ncci/, update NCCI_VERSION and NCCI_EFFECTIVE_DATE in rules/ncci_loader.py, and restart the application."
+  },
+  {
     "document_id": "NCCI_PTP_80048_80053_SAMPLE",
     "source_type": "NCCI",
     "title": "NCCI PTP Edit — Comprehensive Metabolic Panel and Basic Metabolic Panel",

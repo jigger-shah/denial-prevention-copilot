@@ -447,6 +447,65 @@ These are the points in the current implementation where production deployment w
 
 ---
 
+## ADR-011: File-Backed NCCI PTP Lookup with Synthetic Fallback
+
+**Status:** Decided — implemented
+**Decided:** Sprint 5
+
+### Context
+
+Sprint 1 used a single hardcoded NCCI PTP edit pair (80053/80048). The real CMS NCCI Practitioner PTP table contains ~250,000+ active edit pairs. The system needs to validate any CPT code combination a user enters, not just the one worked example.
+
+CMS publishes the NCCI PTP edits as quarterly Excel (.xlsx) files (four files per release, each ~600K rows). The files are free, available from the CMS NCCI download page, and are gitignored from the repository.
+
+### Decision
+
+Implement `rules/ncci_loader.py` that:
+- Discovers all `.xlsx` files in `data/reference/ncci/` at runtime
+- Loads active edit pairs (deletion_date == "*") into a cached Python dict keyed by (col1, col2) tuples
+- Caches the result via `functools.lru_cache` — loaded once per Python process, O(1) per lookup
+- Provides `lookup_ncci_pair(code_a, code_b)` that checks both code orderings (since CMS files are directional: col1 = comprehensive, col2 = component)
+
+`rules/ncci.py` uses the loader and falls back to a single hardcoded synthetic pair when no CMS files are present, preserving demo behavior in portable environments.
+
+### Rationale
+
+**Complete coverage:** The real NCCI table covers ~1.73M active edit pairs (across 4 files). Any CPT code the user enters can be checked against the real CMS data.
+
+**Portability by default:** The repo does not require CMS files to run. The synthetic fallback fires when `data/reference/ncci/` is empty, allowing the app to demo without the 4 large xlsx files.
+
+**No database yet:** The in-memory dict (~84 MB shallow) is sufficient for the lookup volume of a portfolio demo. A future sprint could pre-build a SQLite index for faster startup.
+
+**Update path is explicit:** `NCCI_VERSION` and `NCCI_EFFECTIVE_DATE` constants in `ncci_loader.py` are updated once per quarter. Replacing the xlsx files and restarting the app is sufficient.
+
+### Performance characteristics
+
+| Step | Time | Notes |
+|---|---|---|
+| First load (4 xlsx files, ~2.6M rows) | ~54 seconds | One-time per Python process |
+| Subsequent lookups | O(1), < 1 ms | Dict keyed by (col1, col2) tuple |
+| Memory (in-process) | ~84 MB shallow | 1.73M active pairs cached |
+
+### Tradeoffs
+
+- **First review is slow (54s):** Acceptable for a portfolio demo; documented. A future sprint could pre-serialize the dict to a pickle/parquet file for faster startup.
+- **Whole-file load:** Pandas reads the entire xlsx, not row-by-row. This is necessary because CMS files have no sort guarantee on col1.
+- **No duplicate resolution:** If the same (col1, col2) pair appears in multiple files, the first file wins.
+
+### Alternatives Considered
+
+- **SQLite index:** Faster startup after first build; requires a build step and additional infra. Deferred (DEFER-001 placeholder: "Phase 3 extension").
+- **Keep hardcoded pair only:** Simple but misleads any audience who looks at the NCCI validation claim. Rejected.
+- **Load per-request:** Reloads all 4 files on every claim review. Rejected: 54s per review is not acceptable.
+
+### Implications
+
+- `data/reference/ncci/*.xlsx` is gitignored. The README must document how to download the files.
+- `ncci_loader._clear_ncci_cache()` must be called in tests that need to inject a different reference directory.
+- When CMS releases a new quarterly edition, update `NCCI_VERSION` and `NCCI_EFFECTIVE_DATE` in `ncci_loader.py`, replace the xlsx files, and restart.
+
+---
+
 ## ADR-009: Local Policy Reference Dataset Before CMS API Integration
 
 **Status:** Decided — implemented  

@@ -189,10 +189,48 @@ Enable users to submit arbitrary claims directly from the UI rather than selecti
 
 ---
 
+## Phase 2.8 — File-Backed NCCI PTP Lookup ✅ Complete
+
+**Tests:** 127 tests, all passing (+44)
+
+### Objectives
+Replace the single hardcoded NCCI PTP edit pair with a file-backed lookup using CMS quarterly xlsx files. Preserve synthetic fallback for portable environments.
+
+### Deliverables
+- `rules/ncci_loader.py`: `discover_ncci_files`, `inspect_ncci_files`, `load_ncci_ptp_edits`, `lookup_ncci_pair`; `functools.lru_cache` for O(1) lookup after first load
+- `rules/ncci.py`: updated to use `ncci_loader`; synthetic fallback retained; `_file_backed_finding` and `_synthetic_finding` helpers; `combinations()` loop for all claim code pairs
+- `data/reference/policy_examples.json`: added `CMS_NCCI_PTP_v322r0` entry with version, effective_date, source URL, and update instructions
+- `requirements.txt`: added `openpyxl`
+- `tests/test_ncci_loader.py`: 44 tests covering discovery, loader, lookup, file-backed rule behavior, synthetic fallback, and real-file integration
+- Documentation updated: ADR-011, TD-01 resolved, Roadmap, Demo Script
+
+### Data
+- Files: `ccipra-v322r0-f1.xlsx` through `ccipra-v322r0-f4.xlsx` (CMS NCCI Practitioner PTP, v322r0, effective 2026-07-01)
+- Active pairs: ~1.73M (filtered to deletion_date == "*")
+- 80053/80048 pair: found in f4, modifier 0 (no bypass), effective 2000-07-01
+
+### Performance
+- First load: ~54 seconds (xlsx reading, one-time per Python process)
+- Subsequent lookups: O(1) via Python dict
+- Cached via `functools.lru_cache` — not reloaded during Streamlit session
+
+### Constraints
+- No MUE ingestion in this sprint (deferred to Phase 3)
+- No LLM calls, no live APIs, no ChromaDB
+- Synthetic fallback retained for portability
+
+### Success Criteria
+- All 127 tests pass
+- Worked example (80053 + 80048 + 99214 + Z00.00) still produces 3 findings (HIGH NCCI, HIGH dx conflict, MEDIUM missing modifier 25)
+- NCCI finding citation shows `doc_id = "CMS_NCCI_PTP_v322r0"`, `edition = "v322r0"`, `effective_date = "2026-07-01"`
+- Citation excerpt includes source xlsx filename and NCCI version
+
+---
+
 ## Phase 3 — Complete the Deterministic Layer
 
-**Status:** Next  
-**Estimated scope:** 3–5 implementation sessions
+**Status:** In Progress (NCCI PTP complete; MUE, NPI, ICD-10-CM remaining)
+**Estimated scope:** 2–3 additional implementation sessions
 
 ### Objectives
 Replace all hardcoded rule data with real CMS reference files. Add NPI live validation. This phase makes the rule layer production-complete before any LLM is introduced.
@@ -448,7 +486,8 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 | 2 — Governance & Audit | ✅ | AuditRepository, audit trail, 35 tests | P0 |
 | 2.5 — Policy Intelligence | ✅ | Structured citations, policy detail view, 55 tests | P0 (prep) |
 | 2.75 — Manual Claim Intake | ✅ | Service-line grid, build_manual_claim, 83 tests | P0 |
-| 3 — Complete Deterministic Layer | 🔜 Next | Real NCCI/MUE/NPI | P0 |
+| 2.8 — File-Backed NCCI PTP | ✅ | ncci_loader, ~1.73M active pairs, 127 tests | P0 |
+| 3 — Complete Deterministic Layer | 🔄 In Progress | MUE, NPI, ICD-10-CM remaining | P0 |
 | 4 — LCD/NCD Retrieval | 🔜 | ChromaDB, CMS ingestion | P0 (dep) |
 | 5 — Coverage Agent | 🔜 | First LLM agent, RAG findings | P0 |
 | 6 — Documentation Agent | 🔜 | Clinical note analysis | P1 |
