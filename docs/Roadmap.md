@@ -155,13 +155,47 @@ Replace hollow synthetic citation strings with structured, evidence-backed polic
 
 ---
 
-## Phase 3 — Complete the Deterministic Layer + Claim Intake Form
+## Phase 2.75 — Manual Claim Intake with Service-Line Grid ✅ Complete
 
-**Status:** Next  
-**Estimated scope:** 4–6 implementation sessions
+**Tests:** 83 tests, all passing (+28)
 
 ### Objectives
-Replace all hardcoded rule data with real CMS reference files. Add NPI live validation. Build the manual claim intake form. This phase makes the rule layer production-complete before any LLM is introduced.
+Enable users to submit arbitrary claims directly from the UI rather than selecting from a fixed JSON file. Makes the demo interactive and unlocks user-guided testing of the rule engine with real coding scenarios.
+
+### Deliverables
+- `app/claim_intake.py`: `build_manual_claim()`, `get_payer_id()`, `validate_npi()`, `normalize_code()`; payer name → payer ID mapping; `WORKED_EXAMPLE` constant; no Streamlit imports — fully unit-testable
+- `app/__init__.py`: empty package marker for consistent `from app.claim_intake import ...`
+- `app/main.py` updated:
+  - Mode selector radio (Sample Claim | Manual Claim Entry) in Review Claim tab
+  - Manual mode: claim header (Claim ID, Payer dropdown with auto-populated Payer ID, Provider NPI, Specialty, Notes)
+  - PHI warning: "Do not enter PHI. Synthetic or de-identified notes only."
+  - Service-line coding grid: CPT/HCPCS, Modifier 1, Modifier 2, ICD-10 x4 per row; dynamic row add/remove
+  - Add Service Line, Clear Form, Load Worked Example, Review Claim buttons
+  - Service-line data → `build_manual_claim()` → `load_claim()` → rule engine (no change to downstream pipeline)
+  - Sample Claim mode extracted to `_render_sample_mode()`; Manual mode to `_render_manual_mode()`
+- `rules/rule_engine.py` updated: `load_claim()` now accepts both `"payer"` (sample claims) and `"payer_name"` (manual claims); `npi` and `place_of_service` default to `""` when absent
+- `tests/test_claim_intake.py`: 28 tests covering `get_payer_id`, `validate_npi`, `normalize_code`, `build_manual_claim` (normalization, deduplication, blank-line exclusion, backward compat), and end-to-end integration (manual claim through rule engine)
+
+### Constraints
+- No PHI, no patient identifiers anywhere
+- No external APIs, no LLM, no Chroma
+- All existing sample-claim functionality preserved and regression-tested
+
+### Success Criteria
+- Load Worked Example (99214 + 80053 + 80048, Z00.00, Medicare) produces 3 findings: HIGH NCCI, HIGH dx conflict, MEDIUM missing modifier 25
+- A blank CPT row does not add an empty string to `cpt_codes`
+- The same manual claim produces the same `finding_id` values on repeated reviews (stability test)
+- All 83 tests pass with no live API calls
+
+---
+
+## Phase 3 — Complete the Deterministic Layer
+
+**Status:** Next  
+**Estimated scope:** 3–5 implementation sessions
+
+### Objectives
+Replace all hardcoded rule data with real CMS reference files. Add NPI live validation. This phase makes the rule layer production-complete before any LLM is introduced.
 
 ### Deliverables
 
@@ -179,11 +213,6 @@ Replace all hardcoded rule data with real CMS reference files. Add NPI live vali
 - `data/reference/hcpcs_<quarter>.csv` (downloaded, gitignored)
 - `data/reference/README.md` updated with download instructions
 
-**UI:**
-- `app/components/claim_form.py`: manual claim entry form with payer, NPI, CPT (multi-value), ICD-10 (multi-value), modifiers, POS, units
-- `app/main.py`: mode toggle — "Select sample claim" vs "Enter claim manually"
-- Synthetic NPIs updated to pass Luhn validation (or documented as intentionally invalid)
-
 **Tests:**
 - `tests/test_rules.py`: 20+ tests for MUE (MAI=1, MAI=2, limit not exceeded), NPI (valid, deactivated, invalid format, API timeout), HCPCS validity — all using fixture data, no live API
 
@@ -192,7 +221,7 @@ Replace all hardcoded rule data with real CMS reference files. Add NPI live vali
 - `ClaimIn` field types tightened to `list[str]` and `dict[str, int]`
 
 ### Dependencies
-- Phase 2 complete
+- Phase 2.75 complete
 - CMS quarterly NCCI and MUE files downloaded
 - CMS ICD-10-CM FY2026 reference file downloaded
 
@@ -200,8 +229,8 @@ Replace all hardcoded rule data with real CMS reference files. Add NPI live vali
 - CLM-001 reviewed with real NCCI data produces the same 3 findings as today (regression test)
 - A claim with a code billing more units than its MUE limit produces a HIGH or MEDIUM finding
 - A claim with an invalid or deactivated NPI produces a HIGH finding and the review short-circuits
-- Manual claim entry form accepts an arbitrary claim and passes it to the rule engine
-- 55+ total tests, all passing
+- A manually-entered claim with an invalid NPI is rejected at the NPI rule before NCCI/MUE run
+- 83+ total tests, all passing
 
 ---
 
@@ -417,7 +446,9 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 | 1 — Deterministic Review | ✅ | Rule layer, UI, 12 tests | P0 |
 | 1.5 — Pre-Audit Refactor | ✅ | Citation, finding_id, source | P0 (prep) |
 | 2 — Governance & Audit | ✅ | AuditRepository, audit trail, 35 tests | P0 |
-| 3 — Complete Deterministic Layer | 🔜 Next | Real NCCI/MUE/NPI, claim form | P0 |
+| 2.5 — Policy Intelligence | ✅ | Structured citations, policy detail view, 55 tests | P0 (prep) |
+| 2.75 — Manual Claim Intake | ✅ | Service-line grid, build_manual_claim, 83 tests | P0 |
+| 3 — Complete Deterministic Layer | 🔜 Next | Real NCCI/MUE/NPI | P0 |
 | 4 — LCD/NCD Retrieval | 🔜 | ChromaDB, CMS ingestion | P0 (dep) |
 | 5 — Coverage Agent | 🔜 | First LLM agent, RAG findings | P0 |
 | 6 — Documentation Agent | 🔜 | Clinical note analysis | P1 |

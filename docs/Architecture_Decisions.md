@@ -316,6 +316,57 @@ Building only what is actively used avoids schema debt: unused tables suggest un
 
 ---
 
+## ADR-010: Manual Claim Intake Separated from Rendering
+
+**Status:** Decided — implemented  
+**Decided:** Sprint 4
+
+### Context
+
+Sprint 4 added Manual Claim Entry mode: a claim header form plus a dynamic service-line coding grid. The natural Streamlit pattern is to write transformation logic (normalization, deduplication, payer mapping) inline inside the function that renders the widgets. This makes the logic untestable without a running Streamlit app.
+
+### Decision
+
+All transformation and validation logic lives in `app/claim_intake.py` with no Streamlit imports. The UI (`app/main.py`) handles rendering only: it reads widget values from session state, calls `build_manual_claim()`, and passes the result to `load_claim()`. Session state management and on_change callbacks also live in `main.py`.
+
+```
+app/claim_intake.py          — pure Python, unit-testable
+  PAYER_ID_MAP               — lookup table
+  build_manual_claim()       — service-line grid → claim dict for load_claim()
+  get_payer_id()             — name → payer ID
+  validate_npi()             — format check (10 digits)
+  normalize_code()           — strip + uppercase
+
+app/main.py                  — Streamlit only
+  _render_manual_mode()      — reads session state, calls claim_intake, renders UI
+  _on_payer_name_change()    — on_change callback for payer selectbox
+  _clear_manual_form()       — clears manual_ and sl_ session state keys
+  _load_worked_example()     — loads WORKED_EXAMPLE into session state
+```
+
+### Rationale
+
+**Testability:** `tests/test_claim_intake.py` runs 28 tests against `claim_intake.py` functions with no Streamlit, no session state, no running process. Inline logic cannot be tested this way.
+
+**CLAUDE.md alignment:** The architecture constraint "Orchestrator is a Python controller, not an agent loop" implies business logic should not be buried in rendering code — the same principle applies to the UI layer.
+
+**Single entry point into the rule engine:** `build_manual_claim()` is the only place that converts service-line grid data into the flat `cpt_codes`, `icd10_codes`, `modifiers` arrays that `load_claim()` and the rule engine expect. One place to audit, one place to fix.
+
+**Backward compatibility:** `load_claim()` was updated to accept both `"payer"` (existing sample claims) and `"payer_name"` (manual claims) keys, with `npi` and `place_of_service` defaulting to `""` when absent. All 55 pre-Sprint 4 tests continue to pass unchanged.
+
+### Alternatives Considered
+
+- **Inline in render function:** Fast to write, impossible to test, conflates UI state with business logic.
+- **Separate component in `app/components/claim_form.py`:** The stub exists but adding a Streamlit-coupled component there would still require a running app to test. The key split is between the transformation layer (no Streamlit) and the rendering layer (Streamlit).
+
+### Implications
+
+- Any future claim intake path (CSV upload, EHR integration) should call `build_manual_claim()` or a similar pure-Python builder, then pass the result to `load_claim()`. The rule engine never changes.
+- `app/claim_intake.py` tests run in the deterministic test suite (`pytest tests/`) with no external dependencies, same as `test_rule_engine.py` and `test_audit.py`.
+- `app/components/claim_form.py` stub remains; it could become the Streamlit rendering wrapper for the manual form if the component pattern is adopted in a future sprint.
+
+---
+
 ## Deferred Architecture Decisions
 
 ### DEFER-001: RuleProvider Interface
@@ -448,3 +499,4 @@ Replace `_load_policy_references()` in `retrieval/policy_repository.py` with a C
 | Widget key split | ➖ Two keys to manage | ✅ State survives rerender | — | ✅ Pattern reusable |
 | Narrow audit scope | ✅ Ships sooner | ➖ Incomplete schema | — | ✅ No dead tables |
 | Local policy JSON | ✅ No infra required | ➖ Curated, not comprehensive | ✅ Real source URLs shown | ✅ Same interface as future ChromaDB |
+| Intake transform separate from render | ➖ Two files instead of one | ✅ Logic testable without Streamlit | ✅ One entry point to audit | ✅ Rule engine unchanged for all intake paths |

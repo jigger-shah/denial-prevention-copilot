@@ -62,8 +62,24 @@
 ### Setup (before demo — 30 seconds)
 - Streamlit running at localhost:8501
 - Reviewer name entered in sidebar: "Dr. Jane Smith" (or your name)
-- CLM-001 selected in dropdown
+- CLM-001 selected in the Sample Claim dropdown (default mode)
 - Audit Trail tab cleared of previous sessions if needed
+
+### Optional: Manual Claim Entry Path (insert after Step 1 or demo separately)
+
+> "I want to show you something more realistic — entering a claim directly the way a billing specialist would.
+>
+> [Click 'Manual Claim Entry' mode selector]
+>
+> [Click 'Load Worked Example']
+>
+> This is the same claim as CLM-001 but entered manually: Medicare, three service lines — 99214 with Z00.00, 80053 with Z00.00, 80048 with Z00.00. A specialist would build this from the encounter.
+>
+> [Click Review Claim]
+>
+> Same three findings in under a second. The manual entry path goes through exactly the same rule engine. The system normalizes codes — it will uppercase and strip whitespace before evaluation, so transcription formatting doesn't create false negatives. And it deduplicates across service lines, so if the same diagnosis appears on four lines, it counts once.
+>
+> The audit trail, the citation view, the accept/override workflow — all of it is identical to the sample claim path."
 
 ---
 

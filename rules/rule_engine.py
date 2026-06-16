@@ -30,15 +30,20 @@ def _make_finding_id(claim_id: str, rule: str, issue: str) -> str:
 
 
 def load_claim(claim_dict: dict) -> ClaimIn:
-    """Construct a ClaimIn from a raw dict (e.g. parsed from JSON)."""
+    """Construct a ClaimIn from a raw dict (e.g. parsed from JSON).
+
+    Accepts both sample-claim format (payer key) and manual-claim format
+    (payer_name key). npi and place_of_service default to "" when absent
+    so manual claims that omit those optional fields still parse cleanly.
+    """
     return ClaimIn(
         claim_id=claim_dict["claim_id"],
-        payer=claim_dict["payer"],
-        npi=claim_dict["npi"],
+        payer=claim_dict.get("payer") or claim_dict.get("payer_name", ""),
+        npi=claim_dict.get("npi", ""),
         cpt_codes=claim_dict["cpt_codes"],
         icd10_codes=claim_dict["icd10_codes"],
         modifiers=claim_dict.get("modifiers", []),
-        place_of_service=claim_dict["place_of_service"],
+        place_of_service=claim_dict.get("place_of_service", ""),
         units=claim_dict.get("units", {}),
         note_text=claim_dict.get("note_text", ""),
         description=claim_dict.get("description", ""),

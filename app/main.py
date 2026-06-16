@@ -2,9 +2,9 @@
 Streamlit entry point for the Denial Prevention Copilot.
 
 Responsibilities:
-  - Load synthetic claims from data/synthetic/sample_claims.json.
-  - Let the user select a claim and display its details.
-  - On "Review Claim", call rules.rule_engine — no business logic here.
+  - Two claim entry modes: Sample Claim (synthetic JSON) and Manual Claim Entry.
+  - Manual mode: claim header + service-line coding grid → build_manual_claim() → rule engine.
+  - Sample mode: existing dropdown selection → rule engine (unchanged).
   - Render findings with color-coded severity badges.
   - Capture per-finding Accept / Override decisions in session state.
   - Persist decisions to SQLite via AuditRepository (never calls sqlite3 directly).
@@ -12,15 +12,13 @@ Responsibilities:
 
 All rule evaluation lives in rules/rule_engine.py.
 All DB access goes through db/audit_repository.py.
+Manual claim transformation lives in app/claim_intake.py (no Streamlit there).
 """
 
 import json
 import pathlib
 import sys
 
-# Ensure the project root is on sys.path so `rules` and `db` are importable when
-# Streamlit is launched with `streamlit run app/main.py` (Streamlit adds
-# the script's directory, not the repo root, to sys.path by default).
 _ROOT = pathlib.Path(__file__).parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
@@ -31,6 +29,14 @@ import streamlit as st
 from rules.rule_engine import load_claim, review_claim, overall_risk
 from db.audit_repository import AuditDecision, AuditRepository
 from retrieval.policy_repository import get_citation_detail
+from app.claim_intake import (
+    PAYER_ID_MAP,
+    WORKED_EXAMPLE,
+    get_payer_id,
+    validate_npi,
+    normalize_code,
+    build_manual_claim,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -40,6 +46,8 @@ CLAIMS_FILE = pathlib.Path(__file__).parent.parent / "data" / "synthetic" / "sam
 MODEL_VERSION = "rule_layer_v0.1"
 PROMPT_VERSION = "n/a"
 CONFIDENCE_REVIEW_THRESHOLD = 0.70
+
+_PAYER_PLACEHOLDER = "— Select Payer —"
 
 _SEVERITY_STYLE = {
     "HIGH":   {"badge_bg": "#dc2626", "border": "#dc2626", "card_bg": "#fef2f2"},
@@ -53,6 +61,9 @@ _RISK_CONFIG = {
     "LOW":   ("🔵 LOW RISK — minor issues noted", "info"),
     "CLEAN": ("🟢 CLEAN — no denial risks identified", "success"),
 }
+
+_SL_COLS = [2.2, 1, 1, 1.5, 1.5, 1.5, 1.5, 0.8]
+_SL_HEADERS = ["CPT / HCPCS", "Mod 1", "Mod 2", "ICD-10 (1)", "ICD-10 (2)", "ICD-10 (3)", "ICD-10 (4)", ""]
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +84,7 @@ def get_repo() -> AuditRepository:
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Shared helpers
 # ---------------------------------------------------------------------------
 
 def _severity_badge(severity: str) -> str:
@@ -86,7 +97,6 @@ def _severity_badge(severity: str) -> str:
 
 
 def _citation_caption(citation) -> str:
-    """Build a one-line citation string from a structured Citation object."""
     text = f"{citation.source} — {citation.section}"
     if citation.edition:
         text += f" ({citation.edition})"
@@ -96,7 +106,6 @@ def _citation_caption(citation) -> str:
 
 
 def _render_citation_detail(citation) -> None:
-    """Render the full policy detail view for a Citation inside an expander."""
     policy = get_citation_detail(citation)
 
     col_a, col_b = st.columns(2)
@@ -158,11 +167,7 @@ def _finding_card(finding, claim_id: str, reviewer_name: str, repo: AuditReposit
 
         with col_action:
             decision_key = f"decision_{fid}"
-            # reason_key is a plain session_state slot (never a widget key) so
-            # Streamlit's widget-cleanup pass will not clear it between reruns.
             reason_key = f"reason_{fid}"
-            # text_area_key is the widget's own key — Streamlit may clear it
-            # once the override_pending branch is no longer rendered.
             text_area_key = f"reason_input_{fid}"
             saved_key = f"saved_{fid}"
 
@@ -186,9 +191,6 @@ def _finding_card(finding, claim_id: str, reviewer_name: str, repo: AuditReposit
                 )
                 if st.button("Confirm", key=f"confirm_{fid}"):
                     if reason.strip():
-                        # Persist the reason before rerun so it survives widget
-                        # cleanup (Streamlit removes text_area_key from session
-                        # state when the widget is no longer rendered).
                         st.session_state[reason_key] = reason.strip()
                         st.session_state[decision_key] = "overridden"
                         st.rerun()
@@ -219,7 +221,6 @@ def _save_controls(
     saved_key: str,
     reason_key: str,
 ) -> None:
-    """Render Save Decision button (or saved confirmation) below a decided finding."""
     if st.session_state.get(saved_key):
         st.caption("✅ Saved to audit log")
         return
@@ -263,9 +264,8 @@ def _clear_review_state() -> None:
     ]
     for k in keys_to_clear:
         del st.session_state[k]
-    st.session_state.pop("findings", None)
-    st.session_state.pop("risk", None)
-    st.session_state.pop("reviewed_claim_id", None)
+    for key in ("findings", "risk", "reviewed_claim_id", "manual_reviewed", "manual_claim_dict"):
+        st.session_state.pop(key, None)
 
 
 def _render_audit_trail(repo: AuditRepository) -> None:
@@ -308,6 +308,278 @@ def _render_audit_trail(repo: AuditRepository) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Manual mode callbacks (module-level so Streamlit can serialize them)
+# ---------------------------------------------------------------------------
+
+def _on_payer_name_change() -> None:
+    name = st.session_state.get("manual_payer_name", "")
+    st.session_state["manual_payer_id"] = get_payer_id(name)
+
+
+def _clear_manual_form() -> None:
+    keys_to_clear = [k for k in st.session_state if k.startswith(("manual_", "sl_"))]
+    for k in keys_to_clear:
+        del st.session_state[k]
+    _clear_review_state()
+
+
+def _load_worked_example() -> None:
+    _clear_manual_form()
+    ex = WORKED_EXAMPLE
+    st.session_state["manual_claim_id"] = ex["claim_id"]
+    st.session_state["manual_payer_name"] = ex["payer_name"]
+    st.session_state["manual_payer_id"] = get_payer_id(ex["payer_name"])
+    st.session_state["manual_specialty"] = ex["provider_specialty"]
+    st.session_state["manual_npi"] = ex["npi"]
+    st.session_state["manual_note_text"] = ex["note_text"]
+    row_ids = list(range(len(ex["service_lines"])))
+    st.session_state["manual_active_rows"] = row_ids
+    st.session_state["manual_next_row_id"] = len(ex["service_lines"])
+    for row_id, line in zip(row_ids, ex["service_lines"]):
+        for field in ("cpt", "mod1", "mod2", "icd10_1", "icd10_2", "icd10_3", "icd10_4"):
+            st.session_state[f"sl_{row_id}_{field}"] = line[field]
+
+
+# ---------------------------------------------------------------------------
+# Manual Claim Entry UI
+# ---------------------------------------------------------------------------
+
+def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
+    # Init service-line tracking if not present (also re-initializes after Clear Form)
+    if "manual_active_rows" not in st.session_state:
+        st.session_state["manual_active_rows"] = [0]
+        st.session_state["manual_next_row_id"] = 1
+
+    # ---- Claim Header ----
+    st.subheader("Claim Header")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.text_input(
+            "Claim ID *",
+            key="manual_claim_id",
+            placeholder="CLM-MANUAL-001",
+        )
+    with col2:
+        payer_options = [_PAYER_PLACEHOLDER] + list(PAYER_ID_MAP.keys())
+        st.selectbox(
+            "Payer *",
+            options=payer_options,
+            key="manual_payer_name",
+            on_change=_on_payer_name_change,
+        )
+    with col3:
+        st.text_input(
+            "Payer ID",
+            key="manual_payer_id",
+            placeholder="Auto-populated from payer selection",
+        )
+
+    col4, col5 = st.columns(2)
+    with col4:
+        st.text_input(
+            "Provider NPI (optional)",
+            key="manual_npi",
+            placeholder="10-digit NPI number",
+            max_chars=10,
+        )
+    with col5:
+        st.text_input(
+            "Provider Specialty (optional)",
+            key="manual_specialty",
+            placeholder="e.g. Internal Medicine",
+        )
+
+    st.text_area(
+        "Clinical Notes (optional)",
+        key="manual_note_text",
+        placeholder="Paste de-identified clinical documentation here…",
+        height=80,
+    )
+    st.caption("⚠️ Do not enter PHI. Synthetic or de-identified notes only.")
+
+    st.divider()
+
+    # ---- Service-Line Coding Grid ----
+    st.subheader("Service Lines")
+
+    hdr_cols = st.columns(_SL_COLS)
+    for col, hdr in zip(hdr_cols, _SL_HEADERS):
+        if hdr:
+            col.markdown(f"**{hdr}**")
+
+    active_rows: list[int] = st.session_state["manual_active_rows"]
+    rows_to_remove: list[int] = []
+
+    for row_id in active_rows:
+        cols = st.columns(_SL_COLS)
+        cols[0].text_input("CPT", key=f"sl_{row_id}_cpt", label_visibility="collapsed", placeholder="99213")
+        cols[1].text_input("Mod1", key=f"sl_{row_id}_mod1", label_visibility="collapsed", placeholder="25")
+        cols[2].text_input("Mod2", key=f"sl_{row_id}_mod2", label_visibility="collapsed", placeholder="")
+        cols[3].text_input("ICD1", key=f"sl_{row_id}_icd10_1", label_visibility="collapsed", placeholder="Z00.00")
+        cols[4].text_input("ICD2", key=f"sl_{row_id}_icd10_2", label_visibility="collapsed", placeholder="")
+        cols[5].text_input("ICD3", key=f"sl_{row_id}_icd10_3", label_visibility="collapsed", placeholder="")
+        cols[6].text_input("ICD4", key=f"sl_{row_id}_icd10_4", label_visibility="collapsed", placeholder="")
+        if len(active_rows) > 1:
+            if cols[7].button("✕", key=f"sl_rm_{row_id}", help="Remove this service line"):
+                rows_to_remove.append(row_id)
+
+    if rows_to_remove:
+        st.session_state["manual_active_rows"] = [r for r in active_rows if r not in rows_to_remove]
+        _clear_review_state()
+
+    # Add / Clear / Load buttons
+    btn_add, btn_clear, btn_example, _ = st.columns([1.5, 1.2, 1.8, 4])
+    if btn_add.button("➕ Add Service Line", key="manual_add_sl"):
+        next_id = st.session_state["manual_next_row_id"]
+        st.session_state["manual_active_rows"].append(next_id)
+        st.session_state["manual_next_row_id"] = next_id + 1
+
+    btn_clear.button("🗑 Clear Form", key="manual_clear_btn", on_click=_clear_manual_form)
+    btn_example.button("📋 Load Worked Example", key="manual_example_btn", on_click=_load_worked_example)
+
+    st.divider()
+
+    # ---- Review button ----
+    if st.button("🔍 Review Claim", type="primary", key="manual_review_btn"):
+        header = {
+            "claim_id": st.session_state.get("manual_claim_id", "").strip(),
+            "payer_name": st.session_state.get("manual_payer_name", ""),
+            "payer_id": st.session_state.get("manual_payer_id", "").strip(),
+            "npi": st.session_state.get("manual_npi", "").strip(),
+            "provider_specialty": st.session_state.get("manual_specialty", "").strip(),
+            "note_text": st.session_state.get("manual_note_text", "").strip(),
+        }
+
+        lines = [
+            {
+                "cpt": st.session_state.get(f"sl_{row_id}_cpt", ""),
+                "mod1": st.session_state.get(f"sl_{row_id}_mod1", ""),
+                "mod2": st.session_state.get(f"sl_{row_id}_mod2", ""),
+                "icd10_1": st.session_state.get(f"sl_{row_id}_icd10_1", ""),
+                "icd10_2": st.session_state.get(f"sl_{row_id}_icd10_2", ""),
+                "icd10_3": st.session_state.get(f"sl_{row_id}_icd10_3", ""),
+                "icd10_4": st.session_state.get(f"sl_{row_id}_icd10_4", ""),
+            }
+            for row_id in st.session_state["manual_active_rows"]
+        ]
+
+        errors: list[str] = []
+        if not header["claim_id"]:
+            errors.append("Claim ID is required.")
+        payer_val = header["payer_name"]
+        if not payer_val or payer_val == _PAYER_PLACEHOLDER:
+            errors.append("Payer is required.")
+        npi_ok, npi_err = validate_npi(header["npi"])
+        if not npi_ok:
+            errors.append(f"NPI: {npi_err}")
+        cpts_entered = [normalize_code(l["cpt"]) for l in lines if l["cpt"].strip()]
+        if not cpts_entered:
+            errors.append("At least one CPT/HCPCS code is required.")
+
+        if errors:
+            for err in errors:
+                st.error(err)
+        else:
+            _clear_review_state()
+            claim_dict = build_manual_claim(header, lines)
+            claim = load_claim(claim_dict)
+            findings = review_claim(claim)
+            risk = overall_risk(findings)
+            st.session_state["findings"] = findings
+            st.session_state["risk"] = risk
+            st.session_state["reviewed_claim_id"] = claim_dict["claim_id"]
+            st.session_state["manual_reviewed"] = True
+            st.session_state["manual_claim_dict"] = claim_dict
+
+    # ---- Findings display ----
+    if st.session_state.get("manual_reviewed"):
+        findings = st.session_state["findings"]
+        risk = st.session_state["risk"]
+        reviewed_id = st.session_state.get("reviewed_claim_id", "")
+
+        label, kind = _RISK_CONFIG[risk]
+        getattr(st, kind)(label)
+
+        if not findings:
+            checks = ["NCCI PTP bundling", "Diagnosis-to-procedure conflict", "Missing modifier 25"]
+            st.write("Checks run: " + ", ".join(checks))
+        else:
+            st.subheader(f"Findings ({len(findings)})")
+            for finding in findings:
+                _finding_card(
+                    finding,
+                    claim_id=reviewed_id,
+                    reviewer_name=reviewer_name,
+                    repo=repo,
+                )
+
+
+# ---------------------------------------------------------------------------
+# Sample Claim UI (existing mode, unchanged)
+# ---------------------------------------------------------------------------
+
+def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
+    claims = load_claims()
+    claim_labels = [f"{c['claim_id']} — {c['description']}" for c in claims]
+
+    selected_label = st.selectbox("Select a synthetic claim", claim_labels)
+    selected_idx = claim_labels.index(selected_label)
+    claim_dict = claims[selected_idx]
+
+    if st.session_state.get("selected_claim_id") != claim_dict["claim_id"]:
+        _clear_review_state()
+        st.session_state["selected_claim_id"] = claim_dict["claim_id"]
+
+    with st.expander("Claim Details", expanded=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write(f"**Claim ID:** {claim_dict['claim_id']}")
+            st.write(f"**Payer:** {claim_dict['payer']}")
+            st.write(f"**NPI:** {claim_dict['npi']}")
+            st.write(f"**Place of Service:** {claim_dict['place_of_service']}")
+        with col2:
+            st.write(f"**CPT / HCPCS codes:** {', '.join(claim_dict['cpt_codes'])}")
+            st.write(f"**ICD-10 diagnoses:** {', '.join(claim_dict['icd10_codes'])}")
+            mods = ", ".join(claim_dict.get("modifiers", [])) or "None"
+            st.write(f"**Modifiers:** {mods}")
+
+    st.divider()
+
+    if st.button("🔍 Review Claim", type="primary"):
+        _clear_review_state()
+        claim = load_claim(claim_dict)
+        findings = review_claim(claim)
+        risk = overall_risk(findings)
+        st.session_state["findings"] = findings
+        st.session_state["risk"] = risk
+        st.session_state["reviewed_claim_id"] = claim_dict["claim_id"]
+
+    if (
+        "findings" in st.session_state
+        and st.session_state.get("reviewed_claim_id") == claim_dict["claim_id"]
+    ):
+        findings = st.session_state["findings"]
+        risk = st.session_state["risk"]
+
+        label, kind = _RISK_CONFIG[risk]
+        getattr(st, kind)(label)
+
+        if not findings:
+            checks = ["NCCI PTP bundling", "Diagnosis-to-procedure conflict", "Missing modifier 25"]
+            st.write("Checks run: " + ", ".join(checks))
+        else:
+            st.subheader(f"Findings ({len(findings)})")
+            for finding in findings:
+                _finding_card(
+                    finding,
+                    claim_id=claim_dict["claim_id"],
+                    reviewer_name=reviewer_name,
+                    repo=repo,
+                )
+
+
+# ---------------------------------------------------------------------------
 # Page layout
 # ---------------------------------------------------------------------------
 
@@ -320,7 +592,6 @@ def main() -> None:
 
     repo = get_repo()
 
-    # Sidebar — reviewer identity (session-scoped)
     with st.sidebar:
         st.header("Reviewer")
         reviewer_name = st.text_input(
@@ -331,72 +602,32 @@ def main() -> None:
         st.caption("Required to save decisions to the audit log.")
 
     st.title("Denial Prevention Copilot")
-    st.caption("*AI researches, humans decide.*")
+    st.caption("AI does the research. Humans make the call.")
     st.divider()
 
     tab_review, tab_audit = st.tabs(["🔍 Review Claim", "📋 Audit Trail"])
 
     with tab_review:
-        claims = load_claims()
-        claim_labels = [f"{c['claim_id']} — {c['description']}" for c in claims]
+        mode = st.radio(
+            "Claim entry mode",
+            options=["Sample Claim", "Manual Claim Entry"],
+            horizontal=True,
+            key="claim_mode",
+            label_visibility="collapsed",
+        )
 
-        selected_label = st.selectbox("Select a synthetic claim", claim_labels)
-        selected_idx = claim_labels.index(selected_label)
-        claim_dict = claims[selected_idx]
-
-        # Reset review state whenever the selected claim changes
-        if st.session_state.get("selected_claim_id") != claim_dict["claim_id"]:
+        # Clear review state when mode switches
+        prev_mode = st.session_state.get("_claim_mode_prev")
+        if prev_mode is not None and prev_mode != mode:
             _clear_review_state()
-            st.session_state["selected_claim_id"] = claim_dict["claim_id"]
-
-        # Claim details
-        with st.expander("Claim Details", expanded=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write(f"**Claim ID:** {claim_dict['claim_id']}")
-                st.write(f"**Payer:** {claim_dict['payer']}")
-                st.write(f"**NPI:** {claim_dict['npi']}")
-                st.write(f"**Place of Service:** {claim_dict['place_of_service']}")
-            with col2:
-                st.write(f"**CPT / HCPCS codes:** {', '.join(claim_dict['cpt_codes'])}")
-                st.write(f"**ICD-10 diagnoses:** {', '.join(claim_dict['icd10_codes'])}")
-                mods = ", ".join(claim_dict.get("modifiers", [])) or "None"
-                st.write(f"**Modifiers:** {mods}")
+        st.session_state["_claim_mode_prev"] = mode
 
         st.divider()
 
-        if st.button("🔍 Review Claim", type="primary"):
-            _clear_review_state()
-            claim = load_claim(claim_dict)
-            findings = review_claim(claim)
-            risk = overall_risk(findings)
-            st.session_state["findings"] = findings
-            st.session_state["risk"] = risk
-            st.session_state["reviewed_claim_id"] = claim_dict["claim_id"]
-
-        # Show results if a review has been run for the currently selected claim
-        if (
-            "findings" in st.session_state
-            and st.session_state.get("reviewed_claim_id") == claim_dict["claim_id"]
-        ):
-            findings = st.session_state["findings"]
-            risk = st.session_state["risk"]
-
-            label, kind = _RISK_CONFIG[risk]
-            getattr(st, kind)(label)
-
-            if not findings:
-                checks = ["NCCI PTP bundling", "Diagnosis-to-procedure conflict", "Missing modifier 25"]
-                st.write("Checks run: " + ", ".join(checks))
-            else:
-                st.subheader(f"Findings ({len(findings)})")
-                for finding in findings:
-                    _finding_card(
-                        finding,
-                        claim_id=claim_dict["claim_id"],
-                        reviewer_name=reviewer_name,
-                        repo=repo,
-                    )
+        if mode == "Sample Claim":
+            _render_sample_mode(reviewer_name, repo)
+        else:
+            _render_manual_mode(reviewer_name, repo)
 
     with tab_audit:
         _render_audit_trail(repo)

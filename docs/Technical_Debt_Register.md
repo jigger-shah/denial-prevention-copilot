@@ -2,7 +2,7 @@
 ## Denial Prevention Copilot
 
 **Last updated:** June 2026  
-**Scope:** All known technical debt as of Sprint 3 (policy intelligence foundation)
+**Scope:** All known technical debt as of Sprint 4 (manual claim intake)
 
 Priority definitions:
 - **High** — blocks a P0 PRD requirement, a core demo scenario, or correct audit behavior
@@ -32,6 +32,12 @@ These items were identified before audit logging was implemented and resolved in
 | ~~TD-R6~~ | Citation `doc_id` values were opaque synthetic strings (`"NCCI-PTP-SYNTHETIC"`, `"ICD10CM-FY2026"`, `"NCCI-POLICY-MANUAL"`) not traceable to any real document | Updated to stable, versioned doc_ids (`NCCI_PTP_80048_80053_SAMPLE` etc.) keyed to `policy_examples.json` entries |
 | ~~TD-R7~~ | Citation detail view (excerpt only) had no policy title, source URL, or notes | Added `retrieval/policy_repository.py` and enriched `_render_citation_detail()` in `app/main.py` |
 | ~~TD-R8~~ | `audit_decisions` table had no `citation_effective_date` column; effective dates in `Citation` were not persisted | Added column with backward-compatible `ALTER TABLE` migration in `initialize_database()` |
+
+### Resolved in Sprint 4
+
+| ID | Description | Resolution |
+|---|---|---|
+| ~~TD-07~~ | No manual claim intake — demo limited to 5 fixed synthetic claims | `app/claim_intake.py` + Manual Claim Entry mode in `app/main.py`; service-line coding grid, payer mapping, NPI format validation, Load Worked Example; `load_claim()` updated for backward compat |
 
 ---
 
@@ -178,23 +184,39 @@ These items were identified before audit logging was implemented and resolved in
 
 ---
 
-#### TD-07: No Manual Claim Intake Form
+#### TD-07a: CSV Batch Upload Not Implemented
 
-**Description:** The UI reads claims exclusively from `data/synthetic/sample_claims.json`. There is no way for a user to enter a claim manually or upload a CSV of claims.
+**Description:** Manual single-claim entry is live (Sprint 4), but batch review of an uploaded claim file (PRD §6 P1) is not yet built.
 
-**Location:** `app/main.py` (claim selector section); `app/components/claim_form.py` (stub)
+**Location:** `app/main.py` (Manual Claim Entry mode)
 
 **Impact:**
-- The demo is limited to 5 fixed claims. Cannot demonstrate the product with an arbitrary claim.
-- Cannot show batch review mode (PRD §6 P1: "Batch review of an uploaded claim file").
-- A live demo audience will notice the claim is pre-selected and not entered by the reviewer.
+- Cannot review more than one claim at a time without re-entering each manually.
+- PRD P1 batch mode cannot be demonstrated.
 
 **Recommended Fix:**
-1. Implement `app/components/claim_form.py` with text inputs for payer, NPI, CPT (multi-value), ICD-10 (multi-value), modifiers, POS, units.
-2. Add a tab or mode switch: "Use sample claim" vs "Enter claim manually."
-3. Phase 3 extension: CSV upload with column header validation.
+1. Add a "Upload CSV" option in Manual Claim Entry mode.
+2. Validate CSV column headers (claim_id, payer, npi, cpt_codes, icd10_codes, modifiers, pos, units).
+3. Iterate rows, call `build_manual_claim()` per row, render findings in a collapsible-per-claim layout.
 
-**Planned Sprint:** Phase 3 — Complete Deterministic Layer (manual entry); Phase 3 extension (CSV batch)
+**Planned Sprint:** Phase 3 extension
+
+---
+
+#### TD-07b: NPI Luhn Check-Digit Validation Not Implemented
+
+**Description:** `validate_npi()` in `app/claim_intake.py` checks format (10 digits) but not the Luhn check digit algorithm used by CMS to verify NPI validity.
+
+**Location:** `app/claim_intake.py:validate_npi()`
+
+**Impact:**
+- A 10-digit numeric NPI that fails Luhn validation (e.g., `1234567890`) passes format check but would be rejected by CMS.
+- The manual entry form does not warn the user about structurally invalid NPIs.
+- Low impact now (NPI rule engine check `rules/npi.py` is also a stub).
+
+**Recommended Fix:** Add Luhn validation as a second check in `validate_npi()` after the length/digit check. Return `(False, "NPI check digit invalid.")` if Luhn fails.
+
+**Planned Sprint:** Phase 3 (when `rules/npi.py` Luhn validation is implemented — keep the two in sync)
 
 ---
 
@@ -402,13 +424,16 @@ Add this check gated on whether agents are enabled, so it does not block the cur
 | Priority | Count | Resolved | Open |
 |---|---|---|---|
 | High | 11 | 5 | 6 |
-| Medium | 6 | 0 | 6 |
+| Medium | 7 | 1 (TD-07) | 7 (incl. TD-07a, TD-07b) |
 | Low | 5 | 0 | 5 |
 | Sprint 3 additions | 3 | 3 | 0 |
-| **Total** | **25** | **8** | **17** |
+| **Total** | **26** | **9** | **18** |
 
 Items R1–R5 were addressed in the pre-audit model refactor and Sprint 2.  
 Items R6–R8 were addressed in Sprint 3 (policy intelligence foundation).  
+TD-07 was addressed in Sprint 4 (manual claim intake); replaced by TD-07a (CSV batch) and TD-07b (Luhn NPI).  
 The 6 open High items (TD-01 through TD-06) represent the core gap between current state and a complete MVP.
 
 **Sprint 3 note:** Local policy intelligence was introduced using curated public-policy-style references (`data/reference/policy_examples.json`). This makes the citation detail view evidence-backed without requiring CMS API automation, Chroma, or LLM calls. Real CMS/NCCI/LCD/NCD ingestion remains a future replacement point — `retrieval/policy_repository.py` is designed with the same public interface the ChromaDB-backed version will implement.
+
+**Sprint 4 note:** Manual Claim Entry mode is live. Transformation logic (`build_manual_claim`, `get_payer_id`, `validate_npi`, `normalize_code`) lives in `app/claim_intake.py` with no Streamlit dependency, fully unit-tested (28 new tests). The service-line coding grid accepts arbitrary CPT/ICD-10/modifier combinations and flows through the existing rule engine unchanged. Remaining claim intake gaps: CSV batch upload (TD-07a) and Luhn NPI check-digit validation (TD-07b).
