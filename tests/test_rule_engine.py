@@ -5,7 +5,7 @@ All tests use inline claim dicts — no files, no network, no external dependenc
 """
 
 import pytest
-from rules.rule_engine import load_claim, review_claim, overall_risk
+from rules.rule_engine import load_claim, review_claim, overall_risk, CHECKS_RUN
 
 
 # ---------------------------------------------------------------------------
@@ -282,3 +282,40 @@ def test_modifier_finding_citation_source_is_ncci_policy():
     findings = review_claim(claim)
     mod_finding = next(f for f in findings if f.rule == "missing_modifier_25")
     assert mod_finding.citation.source == "NCCI Policy Manual"
+
+
+# ---------------------------------------------------------------------------
+# CHECKS_RUN metadata
+# ---------------------------------------------------------------------------
+
+def test_checks_run_is_nonempty_list_of_strings():
+    """CHECKS_RUN must be a non-empty list of strings for UI consumption."""
+    assert isinstance(CHECKS_RUN, list)
+    assert len(CHECKS_RUN) >= 5, "Expected at least 5 checks (NPI, NCCI, MUE, dx, modifier)"
+    for label in CHECKS_RUN:
+        assert isinstance(label, str) and label, "Each CHECKS_RUN entry must be a non-empty string"
+
+
+def test_checks_run_covers_all_active_rule_modules():
+    """CHECKS_RUN must mention NPI, NCCI, MUE, and code-validity checks."""
+    combined = " ".join(CHECKS_RUN).upper()
+    assert "NPI" in combined, "CHECKS_RUN missing NPI check"
+    assert "NCCI" in combined, "CHECKS_RUN missing NCCI PTP check"
+    assert "MUE" in combined, "CHECKS_RUN missing MUE check"
+    assert "MODIFIER" in combined or "VALIDITY" in combined, (
+        "CHECKS_RUN missing code-validity / modifier check"
+    )
+
+
+def test_npi_high_finding_short_circuits_engine():
+    """Invalid NPI must return only NPI findings — NCCI/MUE checks must not run."""
+    claim = load_claim(_make_claim(
+        npi="1234567890",            # fails Luhn
+        cpt_codes=["80053", "80048"],  # would trigger NCCI if NPI were valid
+        icd10_codes=["I10"],
+    ))
+    findings = review_claim(claim)
+    assert all(f.rule == "npi_invalid" for f in findings), (
+        "Expected only npi_invalid findings when NPI Luhn fails"
+    )
+    assert any(f.severity == "HIGH" for f in findings)

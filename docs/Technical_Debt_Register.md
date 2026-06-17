@@ -2,7 +2,7 @@
 ## Denial Prevention Copilot
 
 **Last updated:** June 2026
-**Scope:** All known technical debt as of Sprint 7 (NPI validation — Phase B)
+**Scope:** All known technical debt as of Sprint 8 (UI/UX hardening — checks-run metadata, button styling, NPI display)
 
 Priority definitions:
 - **High** — blocks a P0 PRD requirement, a core demo scenario, or correct audit behavior
@@ -370,7 +370,7 @@ Add this check gated on whether agents are enabled, so it does not block the cur
 
 | Priority | Count | Resolved | Open |
 |---|---|---|---|
-| High | 11 | 9 (R1–R5, TD-01, TD-02, TD-03, TD-08 partial) | 2 (TD-04, TD-05, TD-06) |
+| High | 11 | 9 (R1–R5, TD-01, TD-02, TD-03, TD-08 partial) | 3 (TD-04, TD-05, TD-06) |
 | Medium | 7 | 3 (TD-07, TD-07b, TD-08 remainder partial) | 4 (TD-07a, TD-09, TD-10, TD-11, TD-12) |
 | Low | 5 | 1 (TD-17) | 4 (TD-13, TD-14, TD-15, TD-16) |
 | Sprint 3 additions | 3 | 3 | 0 |
@@ -392,4 +392,6 @@ The remaining open High items (TD-04, TD-05, TD-06) represent the core gap: LLM 
 
 **Sprint 6 note:** MUE ingestion and units field support implemented (Phase A of the implementation plan). `rules/mue_loader.py` follows the `ncci_loader.py` pattern: file-backed loader from `data/reference/mue/` with column-name discovery, `lru_cache`, and synthetic fallback. `rules/mue.py:check_mue_limits()` returns MAI-aware findings (MAI=1 → HIGH, MAI=2/3 → MEDIUM). Units field support: `build_manual_claim()` now populates `ClaimIn.units`; service-line grid has a Units column; `WORKED_EXAMPLE` updated. 35 new tests added in `tests/test_rules.py` (previously a stub). Total tests: 165 passing. TD-02 resolved. TD-08 partially resolved.
 
-**Sprint 7 note:** NPI validation implemented (Phase B). `rules/npi.py` implements `luhn_valid()` (Luhn with "80840" prefix), `lookup_nppes()` (NPPES REST API v2.1, 2-second timeout), and `check_npi()` (wired into rule engine as the first check, before NCCI/MUE/code_validity). HIGH findings (format/Luhn failure) short-circuit the rule engine. NPPES timeout and network errors are silenced — review continues. 13 new NPI tests in `test_rules.py` (all mocked; no real network calls). `data/reference/policy_examples.json` includes `NPPES_NPI_REGISTRY` citation anchor. Sample claims updated: all NPIs blanked to avoid demo noise. TD-03, TD-07b, TD-17 resolved. Total tests: 178 passing.
+**Sprint 7 note:** NPI validation implemented (Phase B). `rules/npi.py` implements `luhn_valid()` (Luhn with "80840" prefix), `lookup_nppes()` (NPPES REST API v2.1, 2-second timeout), and `check_npi()` (wired into rule engine as the first check, before NCCI/MUE/code_validity). HIGH findings (format/Luhn failure) short-circuit the rule engine. NPPES timeout and network errors are silenced — review continues. 13 new NPI tests in `test_rules.py` (all mocked; no real network calls). `data/reference/policy_examples.json` includes `NPPES_NPI_REGISTRY` citation anchor. Sample claims updated: all NPIs blanked to avoid demo noise. TD-03, TD-07b, TD-17 resolved. Total tests: 183 passing.
+
+**Sprint 8 note:** UI/UX hardening. (1) `rules/rule_engine.py` now exports `CHECKS_RUN: list[str]` — a human-readable list of all 5 active checks in execution order, consumed by the UI. (2) `app/main.py` updated: checks-run caption now always visible after review (not just on CLEAN claims); NPI short-circuit detected and surfaced as `"⚡ NPI short-circuit"` message; sample-mode NPI blank now shows "Not provided" instead of empty field; sample-mode Review Claim button now has an explicit `key`; NPI field `help` text clarifies that Luhn runs at review time. (3) `.streamlit/config.toml` created with `primaryColor = "#1d4ed8"` — Review Claim button now renders blue (neutral primary action) instead of the Streamlit default red. (4) 3 new tests in `test_rule_engine.py` covering CHECKS_RUN structure, rule coverage, and NPI short-circuit engine behavior. Total tests: 186 passing.

@@ -229,8 +229,8 @@ Replace the single hardcoded NCCI PTP edit pair with a file-backed lookup using 
 
 ## Phase 3 — Complete the Deterministic Layer
 
-**Status:** In Progress — Phase A + Phase B complete (NCCI PTP + Units + MUE + NPI done; ICD-10-CM deferred)
-**Estimated scope:** ICD-10-CM loader deferred; deterministic layer otherwise complete for MVP
+**Status:** Phase A + Phase B + Sprint 8 (UI/UX) complete — deterministic layer is MVP-complete; ICD-10-CM deferred
+**Estimated scope:** ICD-10-CM loader deferred; all other deterministic checks implemented and tested
 
 ### Objectives
 Replace all hardcoded rule data with real CMS reference files. Add NPI live validation. This phase makes the rule layer production-complete before any LLM is introduced.
@@ -244,7 +244,8 @@ Replace all hardcoded rule data with real CMS reference files. Add NPI live vali
 - `app/claim_intake.py`: ✅ **Updated (Phase A).** `build_manual_claim()` populates `ClaimIn.units`; units column in service-line grid
 - `rules/npi.py`: ✅ **Implemented (Phase B).** `luhn_valid()` (Luhn with "80840" prefix); `lookup_nppes()` (NPPES API v2.1, 2s timeout); `check_npi()` with HIGH/MEDIUM/no-finding paths; SHORT-CIRCUITS rule engine on HIGH; NPPES errors silenced
 - `rules/code_validity.py`: 🔜 ICD-10-CM FY reference file loader (replaces Z00.00 hardcode); HCPCS Level II validity; expanded modifier rules
-- `rules/rule_engine.py`: ✅ **Updated (Phase B).** NPI runs first; HIGH finding short-circuits before NCCI/MUE/code_validity; MEDIUM NPI finding included but does not short-circuit
+- `rules/rule_engine.py`: ✅ **Updated (Phase B + Sprint 8).** NPI runs first; HIGH finding short-circuits before NCCI/MUE/code_validity; MEDIUM NPI finding included but does not short-circuit. `CHECKS_RUN` exported for UI consumption.
+- `app/main.py`: ✅ **Updated (Sprint 8).** Checks-run always visible after review (not just on CLEAN); NPI short-circuit message displayed; "Not provided" for blank NPI in sample mode; blue primary button via `.streamlit/config.toml`.
 
 **Reference data:**
 - `data/reference/ncci_ptp_<quarter>.csv` (downloaded, gitignored)
@@ -255,6 +256,7 @@ Replace all hardcoded rule data with real CMS reference files. Add NPI live vali
 
 **Tests:**
 - `tests/test_rules.py`: ✅ 48 tests implemented (Phase A + B): MUE (MAI=1/2/3, limits, fallback, file-backed xlsx/csv, multi-code, integration), NCCI regression, code_validity regression, NPI (luhn_valid, format, Luhn, NPPES mock, short-circuit, no-finding paths).
+- `tests/test_rule_engine.py`: ✅ 3 new tests added (Sprint 8): CHECKS_RUN structure, CHECKS_RUN rule coverage, NPI short-circuit engine behavior. (23 tests total)
 
 **Cleanup:**
 - `db/audit.py` stub removed or replaced with a comment pointing to `audit_repository.py`
@@ -489,7 +491,7 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 | 2.5 — Policy Intelligence | ✅ | Structured citations, policy detail view, 55 tests | P0 (prep) |
 | 2.75 — Manual Claim Intake | ✅ | Service-line grid, build_manual_claim, 83 tests | P0 |
 | 2.8 — File-Backed NCCI PTP | ✅ | ncci_loader, ~1.73M active pairs, 127 tests | P0 |
-| 3 — Complete Deterministic Layer | 🔄 In Progress | Phase A+B done (Units + MUE + NPI); ICD-10-CM deferred | P0 |
+| 3 — Complete Deterministic Layer | ✅ MVP-complete | Phase A+B+Sprint 8 done (Units + MUE + NPI + UI); ICD-10-CM deferred | P0 |
 | 4 — LCD/NCD Retrieval | 🔜 | ChromaDB, CMS ingestion | P0 (dep) |
 | 5 — Coverage Agent | 🔜 | First LLM agent, RAG findings | P0 |
 | 6 — Documentation Agent | 🔜 | Clinical note analysis | P1 |

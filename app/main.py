@@ -26,7 +26,7 @@ if str(_ROOT) not in sys.path:
 import pandas as pd
 import streamlit as st
 
-from rules.rule_engine import load_claim, review_claim, overall_risk
+from rules.rule_engine import load_claim, review_claim, overall_risk, CHECKS_RUN
 from db.audit_repository import AuditDecision, AuditRepository
 from retrieval.policy_repository import get_citation_detail
 from app.claim_intake import (
@@ -257,6 +257,21 @@ def _save_controls(
             st.error(str(exc))
 
 
+def _render_checks_summary(findings: list) -> None:
+    """Always-visible summary of which rule checks ran (and which were skipped)."""
+    npi_short_circuited = any(
+        f.rule == "npi_invalid" and f.severity == "HIGH" for f in findings
+    )
+    if npi_short_circuited:
+        st.caption(
+            "⚡ **NPI short-circuit:** invalid NPI stopped evaluation. "
+            "Fix the NPI to run NCCI, MUE, and code-validity checks."
+        )
+        st.caption("Checks run: " + CHECKS_RUN[0])
+    else:
+        st.caption("Checks run: " + " · ".join(CHECKS_RUN))
+
+
 def _clear_review_state() -> None:
     keys_to_clear = [
         k for k in st.session_state
@@ -383,6 +398,7 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
             key="manual_npi",
             placeholder="10-digit NPI number",
             max_chars=10,
+            help="Format validated here. Luhn check-digit and NPPES registry lookup run at review time.",
         )
     with col5:
         st.text_input(
@@ -503,11 +519,9 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
 
         label, kind = _RISK_CONFIG[risk]
         getattr(st, kind)(label)
+        _render_checks_summary(findings)
 
-        if not findings:
-            checks = ["NCCI PTP bundling", "Diagnosis-to-procedure conflict", "Missing modifier 25"]
-            st.write("Checks run: " + ", ".join(checks))
-        else:
+        if findings:
             st.subheader(f"Findings ({len(findings)})")
             for finding in findings:
                 _finding_card(
@@ -539,7 +553,8 @@ def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
         with col1:
             st.write(f"**Claim ID:** {claim_dict['claim_id']}")
             st.write(f"**Payer:** {claim_dict['payer']}")
-            st.write(f"**NPI:** {claim_dict['npi']}")
+            npi_display = claim_dict.get("npi") or "Not provided"
+            st.write(f"**NPI:** {npi_display}")
             st.write(f"**Place of Service:** {claim_dict['place_of_service']}")
         with col2:
             st.write(f"**CPT / HCPCS codes:** {', '.join(claim_dict['cpt_codes'])}")
@@ -549,7 +564,7 @@ def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
 
     st.divider()
 
-    if st.button("🔍 Review Claim", type="primary"):
+    if st.button("🔍 Review Claim", type="primary", key="sample_review_btn"):
         _clear_review_state()
         claim = load_claim(claim_dict)
         findings = review_claim(claim)
@@ -567,11 +582,9 @@ def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
 
         label, kind = _RISK_CONFIG[risk]
         getattr(st, kind)(label)
+        _render_checks_summary(findings)
 
-        if not findings:
-            checks = ["NCCI PTP bundling", "Diagnosis-to-procedure conflict", "Missing modifier 25"]
-            st.write("Checks run: " + ", ".join(checks))
-        else:
+        if findings:
             st.subheader(f"Findings ({len(findings)})")
             for finding in findings:
                 _finding_card(

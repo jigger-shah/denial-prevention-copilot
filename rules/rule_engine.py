@@ -16,6 +16,17 @@ from rules import ncci, mue, code_validity, npi
 
 _SEVERITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
 
+# Human-readable labels for all rule checks, in execution order.
+# A HIGH NPI finding short-circuits NCCI, MUE, and code_validity.
+# Import in the UI to show what was evaluated — including short-circuit state.
+CHECKS_RUN: list[str] = [
+    "NPI — format + Luhn check-digit + NPPES registry",
+    "NCCI PTP — procedure bundling edits",
+    "MUE — medically unlikely unit limits",
+    "Code validity — diagnosis-to-procedure conflict",
+    "Code validity — modifier 25 requirement",
+]
+
 
 def _make_finding_id(claim_id: str, rule: str, issue: str) -> str:
     """

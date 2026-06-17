@@ -1,9 +1,9 @@
 # Repository Status Report — Denial Prevention Copilot
 
 **Generated:** 2026-06-16
-**Sprint:** 7 complete (Phase B shipped — NPI validation)
+**Sprint:** 8 complete (UI/UX hardening — checks-run metadata, button styling, NPI display fixes)
 **Branch:** main
-**Last commit:** (Phase B) — Add NPI Luhn validation and NPPES registry lookup
+**Last commit:** UI/UX fixes — CHECKS_RUN metadata, always-visible checks display, blue primary button
 
 ---
 
@@ -27,7 +27,7 @@
 
 ### Maturity
 
-The Denial Prevention Copilot is a **well-architected early prototype** with a complete structural skeleton, a fully operational governance/audit layer, and now two production-grade rule engines backed by real CMS reference data patterns. The project has completed Phase A of Phase 3. The application runs end-to-end — a claim goes in, deterministic rules fire against real CMS NCCI edits and a MUE table (synthetic fallback until CMS file is downloaded), findings display with structured citations, and a human decision is written to an append-only audit log. The core AI differentiator (LLM agents, RAG pipeline) remains in stub form, but the deterministic layer is advancing toward completeness.
+The Denial Prevention Copilot is a **well-architected early prototype** with a complete structural skeleton, a fully operational governance/audit layer, and three production-grade rule engines backed by real CMS reference data. The project has completed Phase A + B of Phase 3 and Sprint 8 (UI/UX hardening). The application runs end-to-end — a claim goes in, deterministic rules fire against real CMS NCCI edits and MUE table, and NPI validates via Luhn + NPPES. Findings display with structured citations, the checks-run list is always visible (with short-circuit detection), and a human decision is written to an append-only audit log. The core AI differentiator (LLM agents, RAG pipeline) remains in stub form, but the deterministic layer is complete for MVP purposes.
 
 ### MVP Completion: ~47–50%
 
@@ -38,7 +38,7 @@ The project has strong bones and the first real meat. The scaffolding is product
 - **Governance-first design:** Citation as a first-class dataclass, SHA-256 finding IDs, append-only SQLite, human-in-loop enforcement — these are production-grade governance patterns built before any LLM exists. This is architecturally rare and directly addresses the PRD governance controls requirement (P0).
 - **Clean separation of concerns:** Rule layer → orchestrator → agents → denial prevention is enforced at every level. `rule_engine.py` calls no LLM; `agents/` calls no DB. This modularity makes each layer independently testable and replaceable.
 - **Decision record discipline:** 11 Architecture Decision Records written (ADR-011 added for file-backed NCCI), deferral triggers documented, future replacement points mapped. This is unusually rigorous for a prototype.
-- **183 tests, all passing:** Tests now cover NPI validation (13 tests, all mocked), NCCI loader (44 tests), MUE loader + rule (35 tests), rule engine, audit governance, claim intake (including units propagation), and policy repository. `tests/test_rules.py` has 48 tests (was a stub).
+- **186 tests, all passing:** Tests now cover NPI validation (13 tests, all mocked), NCCI loader (44 tests), MUE loader + rule (35 tests), rule engine (23 tests, including 3 new CHECKS_RUN metadata tests + NPI short-circuit verification), audit governance, claim intake (including units propagation), and policy repository. `tests/test_rules.py` has 48 tests (was a stub).
 - **Real NCCI PTP edits:** Sprint 5 replaced the 1-pair hardcoded lookup with a file-backed loader reading CMS quarterly xlsx files. ~1.73 million active edit pairs across 4 files (ccipra-v322r0-f1 through f4). Modifier 0/1/9 semantics handled. Bidirectional lookup. `functools.lru_cache` for process-lifetime performance. Synthetic fallback when CMS files absent.
 - **MUE ingestion (Sprint 6):** `rules/mue_loader.py` + `rules/mue.py` implement file-backed MUE lookup from `data/reference/mue/` with column-name discovery, `lru_cache`, and synthetic fallback. MAI-aware severity: MAI=1 → HIGH, MAI=2/3 → MEDIUM. Wired into rule engine after NCCI.
 - **Units field support (Sprint 6):** `build_manual_claim()` now populates `ClaimIn.units` (CPT → unit count) from the service-line grid. UI grid has a Units column. `WORKED_EXAMPLE` updated to include units per service line. MUE check uses this field.
@@ -118,8 +118,6 @@ The project has strong bones and the first real meat. The scaffolding is product
   retrieval/vector_store.py ──► retrieval/ingest.py           [STUB]
                             ──► retrieval/chunking.py         [STUB]
 
-  rules/mue.py                                                [STUB]
-  rules/npi.py                                                [STUB]
   app/components/             findings_panel, claim_form, audit_view [STUB]
 ```
 
@@ -129,8 +127,10 @@ The project has strong bones and the first real meat. The scaffolding is product
 |---|---|---|---|
 | UI (two modes) | `app/main.py` | Active | Streamlit app: sample mode + manual claim entry, findings display, human decision panel |
 | Claim intake | `app/claim_intake.py` | Active | Build `ClaimIn` from service-line grid; payer lookup; NPI format check; code normalization |
-| Rule engine | `rules/rule_engine.py` | Active | Dispatch to all rule modules; stamp SHA-256 finding_id; sort HIGH→MEDIUM→LOW |
+| Rule engine | `rules/rule_engine.py` | Active | Dispatch to all rule modules; stamp SHA-256 finding_id; sort HIGH→MEDIUM→LOW; exports `CHECKS_RUN` list consumed by UI |
 | NCCI PTP check | `rules/ncci.py`, `rules/ncci_loader.py` | Active | File-backed loader; ~1.73M active pairs from CMS xlsx (v322r0); synthetic fallback when files absent |
+| MUE check | `rules/mue.py`, `rules/mue_loader.py` | Active | File-backed loader; Q3 2026 CMS Practitioner file; MAI-aware severity; synthetic fallback |
+| NPI validation | `rules/npi.py` | Active | Luhn check + NPPES live lookup; HIGH short-circuits engine; MEDIUM for not-found; timeout silenced |
 | Code validity | `rules/code_validity.py` | Partial | 2 hardcoded rules (Z00.00 + problem E/M conflict; missing modifier 25) |
 | Shared models | `rules/models.py` | Active | `ClaimIn`, `Citation`, `Finding` dataclasses |
 | Audit repository | `db/audit_repository.py` | Active | `AuditDecision` dataclass; append-only SQLite; governance enforcement at save |
@@ -293,7 +293,7 @@ JSON-backed policy reference service with a ChromaDB-compatible public interface
 
 | Attribute | Value |
 |---|---|
-| Status | 127 tests passing; `test_orchestrator.py` is a stub; `test_rules.py` has real coverage |
+| Status | 186 tests passing; `test_orchestrator.py` is a stub; `test_rules.py` has real coverage |
 | Files | `tests/test_audit.py`, `tests/test_claim_intake.py`, `tests/test_policy_repository.py`, `tests/test_rule_engine.py`, `tests/test_rules.py`, `tests/test_ncci_loader.py`, `tests/test_orchestrator.py` |
 
 | Test File | Lines | Coverage Focus |
@@ -301,9 +301,9 @@ JSON-backed policy reference service with a ChromaDB-compatible public interface
 | `test_audit.py` | 202 | Audit repository governance, CSV export, schema migration |
 | `test_claim_intake.py` | 246 | Payer lookup, NPI format check, code normalization, build_manual_claim |
 | `test_policy_repository.py` | 317 | Policy lookup by code, document ID, citation detail |
-| `test_rule_engine.py` | 279 | Rule dispatch, finding_id stamping, severity sorting |
+| `test_rule_engine.py` | ~310 | Rule dispatch, finding_id stamping, severity sorting, CHECKS_RUN structure + coverage, NPI short-circuit behavior (23 tests) |
 | `test_ncci_loader.py` | ~420 | File discovery, xlsx loading, active/deleted filter, bidirectional lookup, file-backed findings, synthetic fallback, real-file integration (44 tests) |
-| `test_rules.py` | 19 | NCCI pair detection, code validity rules |
+| `test_rules.py` | ~550 | NCCI pair detection, code validity, MUE (35 tests), NPI (13 tests — all mocked) |
 | `test_orchestrator.py` | 15 | Stub — placeholder tests only |
 
 ### Feature 11: Architecture Documentation

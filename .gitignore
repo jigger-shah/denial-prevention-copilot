@@ -169,8 +169,8 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# Streamlit
-.streamlit/
+# Streamlit — ignore secrets only; config.toml is safe to commit
+.streamlit/secrets.toml
 
 # macOS
 .DS_Store

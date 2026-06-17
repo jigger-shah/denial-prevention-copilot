@@ -107,6 +107,8 @@
 
 > "Under a second. Three findings.
 >
+> Below the risk banner, you'll see: 'Checks run: NPI validation · NCCI PTP bundling edits · MUE unit limits · Dx-procedure conflict · Modifier 25 requirement.' Five checks, in order — this is what ran on this claim, every time.
+>
 > **Finding 1 — HIGH: Bundled code pair.** 80048, a basic metabolic panel, is bundled into 80053, the comprehensive panel. Billing both is a CO-97 denial. The citation is the CMS NCCI Practitioner PTP edit table, version v322r0, effective July 1, 2026. Modifier indicator 0 means no bypass — this is a hard bundling rule.
 >
 > [Expand 'View source excerpt']
@@ -305,6 +307,8 @@ The NCCI edit table is binary — 80048 is either bundled into 80053 or it isn't
 
 ### Why NPI runs before NCCI
 NPI validation is the first check because an invalid provider identifier makes downstream coding checks unreliable — a claim with a deactivated NPI will be rejected regardless of whether the codes are correct. A HIGH NPI finding (bad format or failed Luhn check digit) short-circuits the rule engine: NCCI, MUE, and code validity do not run. A MEDIUM finding (NPPES lookup failed or NPI not enrolled) is included alongside coding findings so the specialist sees the full picture. NPPES network errors are silenced — a timeout never blocks a review.
+
+When a SHORT-CIRCUIT occurs, the UI displays "⚡ NPI short-circuit: invalid NPI stopped evaluation. Fix the NPI to run NCCI, MUE, and code-validity checks." — so the specialist knows exactly what didn't run and why. The five-item checks-run list narrows to just the NPI check. This is driven by `CHECKS_RUN` exported from `rule_engine.py` — the UI consumes the rule engine's own metadata rather than hardcoding check labels.
 
 ### Why finding_id is SHA-256
 The audit log is append-only. The decision row is written once and never updated. The foreign key from decision → finding must remain valid if the claim is re-reviewed, if findings are reordered, or if the system adds agent findings alongside rule findings. SHA-256 on (claim_id, rule, issue) is process-stable and position-independent.
