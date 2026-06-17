@@ -305,7 +305,7 @@ Build the data pipeline that fetches CMS coverage policies (LCDs and NCDs) and i
 
 ## Phase 5 — Coverage Validation Agent
 
-**Status:** v1 complete (JSON-backed retrieval, no ChromaDB); ChromaDB RAG upgrade deferred to Phase 5 v2  
+**Status:** v1+ complete (JSON-backed retrieval, no ChromaDB); 18 LCD/NCD entries, 6 validated demo scenarios (Sprint 10 Option A); ChromaDB RAG upgrade deferred to Phase 5 v2  
 **Estimated scope (v2 ChromaDB upgrade):** 2–3 implementation sessions
 
 ### Objectives
@@ -494,6 +494,7 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 | 3 — Complete Deterministic Layer | ✅ MVP-complete | Phase A+B+Sprint 8 done (Units + MUE + NPI + UI); ICD-10-CM deferred | P0 |
 | 4 — LCD/NCD Retrieval | 🔜 | ChromaDB, CMS ingestion | P0 (dep) |
 | 5 — Coverage Agent v1 | ✅ v1 complete | JSON-backed retrieval, structured tool use, citation grounding, 14 mocked tests (Sprint 9) | P0 |
+| 5 — Option A corpus expansion | ✅ v1+ complete | 14 new LCD/NCD entries (18 total), 27 retrieval validation tests, 6 demo scenarios (Sprint 10) | P0 |
 | 5v2 — Coverage Agent (ChromaDB) | 🔜 | Swap JSON retrieval for ChromaDB after Phase 4 | P0 |
 | 6 — Documentation Agent | 🔜 | Clinical note analysis | P1 |
 | 7 — Orchestrator + Synthesis | 🔜 | Full 4-agent pipeline | P0 |

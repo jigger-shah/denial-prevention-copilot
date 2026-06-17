@@ -1,9 +1,9 @@
 # Repository Status Report — Denial Prevention Copilot
 
 **Generated:** 2026-06-16
-**Sprint:** 9 complete (Coverage Validation Agent v1 — first LLM integration, JSON-backed retrieval, citation grounding)
+**Sprint:** 10 complete (Option A — Coverage Policy Corpus Expansion, 14 new LCD/NCD entries, 27 retrieval validation tests)
 **Branch:** main
-**Last commit:** Coverage Validation Agent v1 — validate_coverage(), two-tool schema, citation grounding, 14 tests
+**Last commit:** Expand coverage policy corpus: 14 new LCD/NCD entries, 27 retrieval validation tests, 6 demo scenarios
 
 ---
 
@@ -27,18 +27,18 @@
 
 ### Maturity
 
-The Denial Prevention Copilot is a **well-architected early prototype** with a complete structural skeleton, a fully operational governance/audit layer, three production-grade rule engines backed by real CMS reference data, and the first operational LLM agent. The project has completed Phase A + B of Phase 3, Sprint 8 (UI/UX hardening), and Sprint 9 (Coverage Validation Agent v1). The application runs end-to-end — a claim goes in, deterministic rules fire against real CMS NCCI edits and MUE table, and NPI validates via Luhn + NPPES. The new AI Coverage Analysis button invokes Claude via structured tool use to evaluate coverage against retrieved LCD/NCD policy documents, producing cited medical necessity findings. Findings display with structured citations, the checks-run list is always visible (with short-circuit detection), and a human decision is written to an append-only audit log. The RAG pipeline (ChromaDB, CMS Coverage API) remains deferred, but the first LLM agent is live.
+The Denial Prevention Copilot is a **well-architected early prototype** with a complete structural skeleton, a fully operational governance/audit layer, three production-grade rule engines backed by real CMS reference data, and the first operational LLM agent. The project has completed Phase A + B of Phase 3, Sprint 8 (UI/UX hardening), Sprint 9 (Coverage Validation Agent v1), and Sprint 10 (Option A — coverage policy corpus expansion). The application runs end-to-end — a claim goes in, deterministic rules fire against real CMS NCCI edits and MUE table, and NPI validates via Luhn + NPPES. The AI Coverage Analysis button invokes Claude via structured tool use to evaluate coverage against retrieved LCD/NCD policy documents, producing cited medical necessity findings. Sprint 10 expanded the LCD/NCD corpus from 4 entries to 18, covering diabetes management, dyslipidemia, lab medical necessity, HbA1c frequency, preventive services, AWV, colonoscopy screening, mammography, observation status, diagnosis specificity, chronic care management, and E/M level documentation — enabling 6 full demo scenarios. The RAG pipeline (ChromaDB, CMS Coverage API) remains deferred, but the JSON policy corpus now covers the most common Medicare denial categories.
 
-### MVP Completion: ~55–60%
+### MVP Completion: ~60–65%
 
-The project has strong bones and the first real meat. The scaffolding is production-quality; NCCI bundling detection is now genuine (~1.73M real CMS pairs). The first LLM agent (Coverage Validation Agent v1) is live. The governance and audit infrastructure is complete; one agent is implemented, three remain stubs, and the RAG pipeline is ~0% built.
+The project has strong bones and the first real meat. The scaffolding is production-quality; NCCI bundling detection is now genuine (~1.73M real CMS pairs). The Coverage Validation Agent v1 is live with an 18-entry LCD/NCD corpus. The governance and audit infrastructure is complete; one agent is implemented, three remain stubs, and the RAG pipeline is ~0% built but the policy corpus is richer and 6 demo scenarios are validated end-to-end.
 
 ### Strengths
 
 - **Governance-first design:** Citation as a first-class dataclass, SHA-256 finding IDs, append-only SQLite, human-in-loop enforcement — these are production-grade governance patterns built before any LLM exists. This is architecturally rare and directly addresses the PRD governance controls requirement (P0).
 - **Clean separation of concerns:** Rule layer → orchestrator → agents → denial prevention is enforced at every level. `rule_engine.py` calls no LLM; `agents/` calls no DB. This modularity makes each layer independently testable and replaceable.
 - **Decision record discipline:** 11 Architecture Decision Records written (ADR-011 added for file-backed NCCI), deferral triggers documented, future replacement points mapped. This is unusually rigorous for a prototype.
-- **200 tests, all passing:** Tests now cover NPI validation (13 tests, all mocked), NCCI loader (44 tests), MUE loader + rule (35 tests), rule engine (23 tests, including 3 new CHECKS_RUN metadata tests + NPI short-circuit verification), audit governance, claim intake (including units propagation), policy repository, and coverage validation agent (14 tests, all mocked — no real API calls). `tests/test_rules.py` has 48 tests (was a stub).
+- **227 tests, all passing:** Tests now cover NPI validation (13 tests, all mocked), NCCI loader (44 tests), MUE loader + rule (35 tests), rule engine (23 tests, including 3 new CHECKS_RUN metadata tests + NPI short-circuit verification), audit governance, claim intake (including units propagation), policy repository (47 tests, including 27 new retrieval validation tests and 6 demo scenario retrievals added in Sprint 10), and coverage validation agent (14 tests, all mocked — no real API calls). `tests/test_rules.py` has 48 tests (was a stub).
 - **Real NCCI PTP edits:** Sprint 5 replaced the 1-pair hardcoded lookup with a file-backed loader reading CMS quarterly xlsx files. ~1.73 million active edit pairs across 4 files (ccipra-v322r0-f1 through f4). Modifier 0/1/9 semantics handled. Bidirectional lookup. `functools.lru_cache` for process-lifetime performance. Synthetic fallback when CMS files absent.
 - **MUE ingestion (Sprint 6):** `rules/mue_loader.py` + `rules/mue.py` implement file-backed MUE lookup from `data/reference/mue/` with column-name discovery, `lru_cache`, and synthetic fallback. MAI-aware severity: MAI=1 → HIGH, MAI=2/3 → MEDIUM. Wired into rule engine after NCCI.
 - **Units field support (Sprint 6):** `build_manual_claim()` now populates `ClaimIn.units` (CPT → unit count) from the service-line grid. UI grid has a Units column. `WORKED_EXAMPLE` updated to include units per service line. MUE check uses this field.
@@ -285,10 +285,35 @@ A full service-line coding grid: CPT code, ICD-10 codes, modifiers, units, place
 
 | Attribute | Value |
 |---|---|
-| Status | Partial — interface ready, 8 entries (5 original + 3 LCD entries for coverage agent v1) |
+| Status | Partial — interface ready; 25 entries total (18 LCD/NCD) covering 14 common Medicare denial categories |
 | Files | `retrieval/policy_repository.py`, `data/reference/policy_examples.json` |
 
-JSON-backed policy reference service with a ChromaDB-compatible public interface: `find_policy_by_document_id()`, `find_policies_by_codes()`, `get_citation_detail()`. Interface designed as a drop-in replacement for ChromaDB once the RAG pipeline is built (ADR-009). Sprint 9 added 3 LCD-style entries with diagnosis-driven `applies_to_codes` (ICD-10 codes rather than CPT codes) to enable targeted coverage agent retrieval without pulling E/M policies for every claim.
+JSON-backed policy reference service with a ChromaDB-compatible public interface: `find_policy_by_document_id()`, `find_policies_by_codes()`, `get_citation_detail()`. Interface designed as a drop-in replacement for ChromaDB once the RAG pipeline is built (ADR-009). Sprint 9 added 3 LCD-style entries; Sprint 10 (Option A) added 14 more, bringing the LCD/NCD corpus to 18 entries across these categories:
+
+| Category | document_id | Codes Indexed |
+|---|---|---|
+| Diabetes management | LCD_DIABETES_MGMT_E11 | E11.9, E11.65, E11.40, E11.329, E13.9 |
+| Dyslipidemia management | LCD_DYSLIPIDEMIA_MGMT_E78 | E78.5, E78.00, E78.01, E78.2, E78.4 |
+| Metabolic panel medical necessity | LCD_LAB_MEDICAL_NECESSITY_METABOLIC | 80053, 80048, 80076 |
+| Lipid panel frequency | LCD_LIPID_PANEL_FREQUENCY | 80061, 82465, 83721 |
+| HbA1c frequency | LCD_HEMOGLOBIN_A1C_FREQUENCY | 83036, 83037 |
+| Preventive visit 40–64 | LCD_PREVENTIVE_99396_COVERAGE | 99396, Z00.00, Z00.01 |
+| Annual Wellness Visit | NCD_AWV_G0438_G0439 | G0438, G0439, Z00.00 |
+| Screening colonoscopy | NCD_COLORECTAL_SCREENING_COLONOSCOPY | 45378, 45380, 45385, 45386, 45388 |
+| Colonoscopy diagnosis | LCD_COLONOSCOPY_DIAGNOSIS_Z12 | Z12.11, Z12.12, Z80.0, Z83.71 |
+| Mammography | NCD_MAMMOGRAPHY_COVERAGE | 77067, 77065, 77066, Z12.31, Z12.39 |
+| Observation status | LCD_OBSERVATION_STATUS_BILLING | 99234, 99235, 99236, G0379 |
+| Diagnosis specificity | LCD_DIAGNOSIS_SPECIFICITY_REQ | M54.9, M79.3, M25.50, R51.9, R05.9 |
+| Chronic care management | LCD_CHRONIC_CARE_MANAGEMENT | 99490, 99491, G0511 |
+| E/M level documentation | LCD_EM_CODING_LEVEL_SUPPORT | 99213, 99214, 99215, 99202–99205 |
+
+The six validated demo scenarios (each tested in `tests/test_policy_repository.py`) are:
+1. Labs with well-visit dx only: 80053 + 83036 + Z00.00 → `LCD_LAB_MEDICAL_NECESSITY_METABOLIC` + `LCD_HEMOGLOBIN_A1C_FREQUENCY`
+2. Diabetes management E/M: E11.9 + 99214 → `LCD_DIABETES_MGMT_E11` (no concern expected)
+3. Screening colonoscopy with polypectomy: 45385 + Z12.11 → both colonoscopy policies (conversion concern)
+4. Unspecified diagnosis + high-level E/M: M54.9 + 99215 → `LCD_DIAGNOSIS_SPECIFICITY_REQ` + `LCD_EM_CODING_LEVEL_SUPPORT`
+5. AWV same-day E/M: G0439 + 99213 + Z00.00 → `NCD_AWV_G0438_G0439` (modifier 25 concern)
+6. HbA1c for established diabetic: 83036 + E11.65 → `LCD_HEMOGLOBIN_A1C_FREQUENCY` + `LCD_DIABETES_MGMT_E11` (no concern)
 
 ### Feature 10: Coverage Validation Agent v1
 
@@ -318,7 +343,7 @@ Two-tool schema: `report_coverage_finding` (issue, recommendation, severity, con
 |---|---|---|
 | `test_audit.py` | 202 | Audit repository governance, CSV export, schema migration |
 | `test_claim_intake.py` | 246 | Payer lookup, NPI format check, code normalization, build_manual_claim |
-| `test_policy_repository.py` | 317 | Policy lookup by code, document ID, citation detail |
+| `test_policy_repository.py` | ~530 | Policy lookup by code, document ID, citation detail; corpus expansion coverage (47 tests: 20 original + 27 new in Sprint 10) |
 | `test_rule_engine.py` | ~310 | Rule dispatch, finding_id stamping, severity sorting, CHECKS_RUN structure + coverage, NPI short-circuit behavior (23 tests) |
 | `test_ncci_loader.py` | ~420 | File discovery, xlsx loading, active/deleted filter, bidirectional lookup, file-backed findings, synthetic fallback, real-file integration (44 tests) |
 | `test_rules.py` | ~550 | NCCI pair detection, code validity, MUE (35 tests), NPI (13 tests — all mocked) |
@@ -345,7 +370,7 @@ Two-tool schema: `report_coverage_finding` (issue, recommendation, severity, con
 | NPI validation | P0 | Complete | `rules/npi.py`: Luhn check + NPPES live lookup; HIGH/MEDIUM/no-finding paths; short-circuit on HIGH; NPPES timeout silenced |
 | ICD-10-CM code validity | P0 | Partial | `rules/code_validity.py`: 2 hardcoded rules; no reference file loaded |
 | HCPCS/CPT code validity | P0 | Partial | Same file; no CPT crosswalk loaded |
-| Coverage validation agent (RAG + LLM) | P0 | Partial (v1) | `agents/coverage_validation.py`: implemented; JSON-backed retrieval (no ChromaDB); structured tool use; citation grounding enforced; ChromaDB RAG upgrade deferred |
+| Coverage validation agent (RAG + LLM) | P0 | Partial (v1+) | `agents/coverage_validation.py`: implemented; JSON-backed retrieval (18 LCD/NCD entries after Sprint 10); structured tool use; citation grounding enforced; 6 demo scenarios validated; ChromaDB RAG upgrade deferred |
 | Documentation review agent | P0 | Not Started | `agents/documentation_review.py`: docstring only |
 | Denial prevention synthesis | P0 | Not Started | `agents/denial_prevention.py`: docstring only |
 | Orchestrator (parallel agents) | P0 | Not Started | `agents/orchestrator.py`: docstring only |
@@ -370,7 +395,7 @@ Two-tool schema: `report_coverage_finding` (issue, recommendation, severity, con
 | No PHI constraint | Requirement | Complete | PHI-guard caption; synthetic data only |
 | Synthetic data only | Requirement | Complete | No real claims in codebase or data files |
 
-**Summary:** 16 of 28 tracked requirements are Complete (NPI validation promoted from Partial to Complete in Sprint 7; MUE promoted in Sprint 6). Coverage agent promoted from Not Started to Partial (Sprint 9 — v1 with JSON-backed retrieval). 8 partially implemented. 8 Not Started. 4 Not Measurable (require the agent/eval layer).
+**Summary:** 16 of 28 tracked requirements are Complete (NPI validation promoted from Partial to Complete in Sprint 7; MUE promoted in Sprint 6). Coverage agent is Partial (Sprint 9 v1 + Sprint 10 Option A — JSON-backed retrieval, 18 LCD/NCD entries, 6 demo scenarios validated). 8 partially implemented. 8 Not Started. 4 Not Measurable (require the agent/eval layer).
 
 ---
 
@@ -386,18 +411,18 @@ NCCI PTP edits are now real (Sprint 5). The remaining deterministic layer gaps a
 
 ### Gap 2: LCD/NCD Retrieval Pipeline — ChromaDB (Phase 4)
 
-The coverage validation agent v1 uses the JSON policy repository (3 LCD entries) as a retrieval substitute. The full ChromaDB RAG pipeline is not yet built:
+The coverage validation agent v1 uses the JSON policy repository (18 LCD/NCD entries after Sprint 10) as a retrieval substitute. The full ChromaDB RAG pipeline is not yet built:
 
-The coverage validation agent requires a working RAG layer. All three retrieval modules are stubs:
+The coverage validation agent requires a working RAG layer for real CMS LCD/NCD text. All three retrieval modules are stubs:
 - `retrieval/ingest.py` — CMS Coverage API client
 - `retrieval/chunking.py` — section-aware LCD/NCD splitter
 - `retrieval/vector_store.py` — ChromaDB interface
 
-`retrieval/policy_repository.py` has the right public interface and 5 synthetic examples, designed for ChromaDB backend swap without changing the agent interface (ADR-009).
+`retrieval/policy_repository.py` has the right public interface and 25 curated entries (18 LCD/NCD), designed for ChromaDB backend swap without changing the agent interface (ADR-009). Sprint 10 (Option A) significantly improved coverage: the agent now retrieves relevant policies for all six validated demo scenarios, covering diabetes, dyslipidemia, lab necessity, HbA1c, preventive services, AWV, colonoscopy, mammography, observation, diagnosis specificity, CCM, and E/M level documentation.
 
 ### Gap 3: Coverage Validation Agent — v2 ChromaDB Upgrade (Phase 5 v2)
 
-`agents/coverage_validation.py` is implemented (Sprint 9 — v1). The v1 uses the JSON policy repository for retrieval (3 LCD entries) and calls Claude via structured tool use with citation grounding enforced. The remaining gap is the ChromaDB RAG upgrade: replace JSON retrieval with `retrieval/vector_store.py` queries against real CMS LCD/NCD documents. The public interface (`validate_coverage(claim: ClaimIn)`) is unchanged; only `find_policies_by_codes()` call is replaced.
+`agents/coverage_validation.py` is implemented (Sprint 9 — v1). The v1 uses the JSON policy repository for retrieval (18 LCD/NCD entries after Sprint 10) and calls Claude via structured tool use with citation grounding enforced. The remaining gap is the ChromaDB RAG upgrade: replace JSON retrieval with `retrieval/vector_store.py` queries against real CMS LCD/NCD documents. The public interface (`validate_coverage(claim: ClaimIn)`) is unchanged; only `find_policies_by_codes()` call is replaced.
 
 ### Gap 4: Documentation Review Agent (Phase 6)
 

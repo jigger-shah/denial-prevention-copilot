@@ -151,6 +151,62 @@
 
 ---
 
+### Step 2.5 Extended: Coverage Policy Demo Scenarios
+
+The coverage policy corpus (Sprint 10) supports 6 specific manual-claim demo scenarios. Use these in Manual Claim Entry mode to show targeted coverage concerns.
+
+#### Demo Scenario 1: Labs with Well-Visit Diagnosis Only (concern expected)
+
+**Claim:** CPT 80053 + 83036, ICD-10 Z00.00, Medicare
+- Enter service line 1: CPT 80053, ICD-10 Z00.00
+- Enter service line 2: CPT 83036, ICD-10 Z00.00
+- Click Review Claim, then Run AI Coverage Analysis
+- **Expected:** MEDIUM concern — CMP and HbA1c ordered with only routine exam diagnosis; labs require a documented clinical indication (e.g., E11.9 for diabetes, I10 for hypertension); policies retrieved: `LCD_LAB_MEDICAL_NECESSITY_METABOLIC`, `LCD_HEMOGLOBIN_A1C_FREQUENCY`
+- **Interview angle:** "The rule layer can flag a NCCI or MUE violation, but it can't tell you that metabolic panels are only covered when there's a clinical condition requiring monitoring. That requires policy reasoning — this is what the agent adds."
+
+#### Demo Scenario 2: Diabetes Management E/M (no concern expected)
+
+**Claim:** CPT 99214, ICD-10 E11.9, Medicare
+- Enter service line 1: CPT 99214, ICD-10 E11.9
+- Click Review Claim, then Run AI Coverage Analysis
+- **Expected:** No concern — E11.9 (Type 2 diabetes) is a covered indication for E/M services; policy retrieved: `LCD_DIABETES_MGMT_E11`
+- **Interview angle:** "This demonstrates the suppression path: the agent identifies a supported clinical indication and correctly returns no finding rather than a false positive. Precision matters here — overclaiming failures destroys trust."
+
+#### Demo Scenario 3: Annual Wellness Visit + Same-Day E/M (concern expected)
+
+**Claim:** CPT G0439 + 99213, ICD-10 Z00.00, Medicare
+- Enter service line 1: CPT G0439, ICD-10 Z00.00
+- Enter service line 2: CPT 99213, ICD-10 Z00.00
+- Click Review Claim, then Run AI Coverage Analysis
+- **Expected:** MEDIUM concern — AWV (G0439) and office E/M on same date require modifier 25 and a documented separate problem diagnosis; without modifier, E/M will be denied as bundled with AWV; policy retrieved: `NCD_AWV_G0438_G0439`
+- **Interview angle:** "The AWV is a Medicare-specific benefit with specific billing rules. The AI knows the distinction between G0439 (Annual Wellness Visit) and 99213 (problem-focused E/M) and can apply the modifier 25 requirement in plain language — this is the kind of nuanced coverage rule that NCCI edits don't capture."
+
+#### Demo Scenario 4: Unspecified Diagnosis + High-Level E/M (concern expected)
+
+**Claim:** CPT 99215, ICD-10 M54.9, Medicare
+- Enter service line 1: CPT 99215, ICD-10 M54.9
+- Click Review Claim, then Run AI Coverage Analysis
+- **Expected:** MEDIUM concern — M54.9 (Dorsalgia, unspecified) is an unspecified code; ICD-10-CM guidelines require the highest degree of specificity the documentation supports; 99215 audit risk is elevated when the diagnosis is unspecified; policies retrieved: `LCD_DIAGNOSIS_SPECIFICITY_REQ`, `LCD_EM_CODING_LEVEL_SUPPORT`
+- **Interview angle:** "Two policies are retrieved and the AI synthesizes them: specificity requirements from ICD-10 guidelines plus E/M level documentation requirements. A high-level visit with an unspecified dx is a double audit flag."
+
+#### Demo Scenario 5: Screening Colonoscopy with Polypectomy (concern expected)
+
+**Claim:** CPT 45385, ICD-10 Z12.11, Medicare
+- Enter service line 1: CPT 45385, ICD-10 Z12.11
+- Click Review Claim, then Run AI Coverage Analysis
+- **Expected:** MEDIUM–HIGH concern — when polypectomy (45385) is performed during a screening colonoscopy, the encounter converts from screening to diagnostic; Z12.11 alone as the only diagnosis after polypectomy is insufficient; the actual polyp finding code must be added; policies retrieved: `NCD_COLORECTAL_SCREENING_COLONOSCOPY`, `LCD_COLONOSCOPY_DIAGNOSIS_Z12`
+- **Interview angle:** "The screening-to-diagnostic conversion rule is one of the most common denial sources in gastroenterology — the CPT code changes, the diagnosis must change with it, and neither the NCCI edit table nor code validity catches this. This is exactly where policy reasoning over LCD text adds value."
+
+#### Demo Scenario 6: HbA1c for Established Diabetic (no concern expected)
+
+**Claim:** CPT 83036, ICD-10 E11.65, Medicare
+- Enter service line 1: CPT 83036, ICD-10 E11.65
+- Click Review Claim, then Run AI Coverage Analysis
+- **Expected:** No concern — HbA1c testing is covered up to 4x/year for patients with diabetes; E11.65 (T2DM with hyperglycemia) is a covered indication; policies retrieved: `LCD_HEMOGLOBIN_A1C_FREQUENCY`, `LCD_DIABETES_MGMT_E11`
+- **Interview angle:** "This pairs with Scenario 1. Same CPT code (83036), different diagnosis: with E11.65 (diabetes with hyperglycemia), the test is clearly covered. Without a diabetes diagnosis — only Z00.00 — it's not. The retrieval system surfaces both policies either way; the AI reasons about which applies."
+
+---
+
 ### Step 3: Human Decision Workflow (60 seconds)
 
 > "Every decision is made by a named specialist. My name is in the sidebar.

@@ -315,3 +315,176 @@ def test_audit_migration_adds_column_to_existing_db(tmp_path):
     rows = repo.get_decisions()
     assert len(rows) == 1
     assert rows[0]["citation_effective_date"] == "2000-01-01"
+
+
+# ---------------------------------------------------------------------------
+# LCD/NCD corpus retrieval coverage (Option A corpus expansion)
+# ---------------------------------------------------------------------------
+
+_LCD_NCD_SOURCE_TYPES = {"LCD", "NCD"}
+
+
+def _lcd_ncd_doc_ids(results: list[dict]) -> set[str]:
+    """Return document_ids of LCD and NCD entries from a retrieval result set."""
+    return {p["document_id"] for p in results if p.get("source_type") in _LCD_NCD_SOURCE_TYPES}
+
+
+def test_lcd_ncd_count_after_corpus_expansion():
+    """After corpus expansion, there should be at least 15 LCD/NCD entries total."""
+    all_policies = load_policy_references()
+    lcd_ncd = [p for p in all_policies if p.get("source_type") in _LCD_NCD_SOURCE_TYPES]
+    assert len(lcd_ncd) >= 15, (
+        f"Expected at least 15 LCD/NCD entries after corpus expansion, found {len(lcd_ncd)}"
+    )
+
+
+# Required codes — each must retrieve at least one LCD/NCD entry.
+
+def test_retrieval_z00_00_returns_lcd():
+    results = find_policies_by_codes(icd10_codes=["Z00.00"])
+    assert _lcd_ncd_doc_ids(results), "Z00.00 should match at least one LCD/NCD"
+
+
+def test_retrieval_z00_01_returns_lcd():
+    results = find_policies_by_codes(icd10_codes=["Z00.01"])
+    assert _lcd_ncd_doc_ids(results), "Z00.01 should match at least one LCD/NCD"
+
+
+def test_retrieval_i10_returns_lcd():
+    results = find_policies_by_codes(icd10_codes=["I10"])
+    assert _lcd_ncd_doc_ids(results), "I10 should match at least one LCD/NCD"
+
+
+def test_retrieval_e11_9_returns_lcd():
+    results = find_policies_by_codes(icd10_codes=["E11.9"])
+    assert _lcd_ncd_doc_ids(results), "E11.9 should match at least one LCD/NCD"
+
+
+def test_retrieval_99213_returns_lcd():
+    results = find_policies_by_codes(cpt_codes=["99213"])
+    assert _lcd_ncd_doc_ids(results), "99213 should match at least one LCD/NCD"
+
+
+def test_retrieval_99214_returns_lcd():
+    results = find_policies_by_codes(cpt_codes=["99214"])
+    assert _lcd_ncd_doc_ids(results), "99214 should match at least one LCD/NCD"
+
+
+def test_retrieval_99395_returns_lcd():
+    results = find_policies_by_codes(cpt_codes=["99395"])
+    assert _lcd_ncd_doc_ids(results), "99395 should match at least one LCD/NCD"
+
+
+def test_retrieval_80048_returns_lcd():
+    results = find_policies_by_codes(cpt_codes=["80048"])
+    assert _lcd_ncd_doc_ids(results), "80048 should match at least one LCD/NCD"
+
+
+def test_retrieval_80053_returns_lcd():
+    results = find_policies_by_codes(cpt_codes=["80053"])
+    assert _lcd_ncd_doc_ids(results), "80053 should match at least one LCD/NCD"
+
+
+def test_retrieval_36415_returns_lcd():
+    results = find_policies_by_codes(cpt_codes=["36415"])
+    assert _lcd_ncd_doc_ids(results), "36415 should match at least one LCD/NCD"
+
+
+# New codes added by corpus expansion.
+
+def test_retrieval_e78_5_returns_lcd():
+    results = find_policies_by_codes(icd10_codes=["E78.5"])
+    assert _lcd_ncd_doc_ids(results), "E78.5 should match at least one LCD/NCD"
+
+
+def test_retrieval_83036_returns_lcd():
+    results = find_policies_by_codes(cpt_codes=["83036"])
+    assert _lcd_ncd_doc_ids(results), "83036 should match at least one LCD/NCD"
+
+
+def test_retrieval_80061_returns_lcd():
+    results = find_policies_by_codes(cpt_codes=["80061"])
+    assert _lcd_ncd_doc_ids(results), "80061 should match at least one LCD/NCD"
+
+
+def test_retrieval_99396_returns_lcd():
+    results = find_policies_by_codes(cpt_codes=["99396"])
+    assert _lcd_ncd_doc_ids(results), "99396 should match at least one LCD/NCD"
+
+
+def test_retrieval_g0439_returns_ncd():
+    results = find_policies_by_codes(cpt_codes=["G0439"])
+    assert _lcd_ncd_doc_ids(results), "G0439 should match at least one NCD"
+
+
+def test_retrieval_45378_returns_ncd():
+    results = find_policies_by_codes(cpt_codes=["45378"])
+    assert _lcd_ncd_doc_ids(results), "45378 should match at least one NCD"
+
+
+def test_retrieval_z12_11_returns_lcd():
+    results = find_policies_by_codes(icd10_codes=["Z12.11"])
+    assert _lcd_ncd_doc_ids(results), "Z12.11 should match at least one LCD/NCD"
+
+
+def test_retrieval_77067_returns_ncd():
+    results = find_policies_by_codes(cpt_codes=["77067"])
+    assert _lcd_ncd_doc_ids(results), "77067 should match at least one NCD"
+
+
+def test_retrieval_m54_9_returns_lcd():
+    results = find_policies_by_codes(icd10_codes=["M54.9"])
+    assert _lcd_ncd_doc_ids(results), "M54.9 should match at least one LCD/NCD"
+
+
+def test_retrieval_99490_returns_lcd():
+    results = find_policies_by_codes(cpt_codes=["99490"])
+    assert _lcd_ncd_doc_ids(results), "99490 should match at least one LCD/NCD"
+
+
+# Demo scenario retrieval tests.
+
+def test_demo_scenario_1_labs_with_well_visit_dx():
+    """80053 + 83036 + Z00.00 retrieves lab necessity and HbA1c frequency policies."""
+    results = find_policies_by_codes(cpt_codes=["80053", "83036"], icd10_codes=["Z00.00"])
+    doc_ids = _lcd_ncd_doc_ids(results)
+    assert "LCD_LAB_MEDICAL_NECESSITY_METABOLIC" in doc_ids
+    assert "LCD_HEMOGLOBIN_A1C_FREQUENCY" in doc_ids
+
+
+def test_demo_scenario_2_diabetes_management():
+    """E11.9 + 99214 retrieves diabetes management LCD."""
+    results = find_policies_by_codes(cpt_codes=["99214"], icd10_codes=["E11.9"])
+    doc_ids = _lcd_ncd_doc_ids(results)
+    assert "LCD_DIABETES_MGMT_E11" in doc_ids
+
+
+def test_demo_scenario_3_screening_colonoscopy_with_polypectomy():
+    """45385 + Z12.11 retrieves both colonoscopy policies."""
+    results = find_policies_by_codes(cpt_codes=["45385"], icd10_codes=["Z12.11"])
+    doc_ids = _lcd_ncd_doc_ids(results)
+    assert "NCD_COLORECTAL_SCREENING_COLONOSCOPY" in doc_ids
+    assert "LCD_COLONOSCOPY_DIAGNOSIS_Z12" in doc_ids
+
+
+def test_demo_scenario_4_unspecified_diagnosis():
+    """M54.9 + 99215 retrieves specificity and E/M level documentation policies."""
+    results = find_policies_by_codes(cpt_codes=["99215"], icd10_codes=["M54.9"])
+    doc_ids = _lcd_ncd_doc_ids(results)
+    assert "LCD_DIAGNOSIS_SPECIFICITY_REQ" in doc_ids
+    assert "LCD_EM_CODING_LEVEL_SUPPORT" in doc_ids
+
+
+def test_demo_scenario_5_awv_same_day_em():
+    """G0439 + 99213 + Z00.00 retrieves AWV NCD."""
+    results = find_policies_by_codes(cpt_codes=["G0439", "99213"], icd10_codes=["Z00.00"])
+    doc_ids = _lcd_ncd_doc_ids(results)
+    assert "NCD_AWV_G0438_G0439" in doc_ids
+
+
+def test_demo_scenario_6_hba1c_for_established_diabetic():
+    """83036 + E11.65 retrieves HbA1c frequency and diabetes management policies."""
+    results = find_policies_by_codes(cpt_codes=["83036"], icd10_codes=["E11.65"])
+    doc_ids = _lcd_ncd_doc_ids(results)
+    assert "LCD_HEMOGLOBIN_A1C_FREQUENCY" in doc_ids
+    assert "LCD_DIABETES_MGMT_E11" in doc_ids
