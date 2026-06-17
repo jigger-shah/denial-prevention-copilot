@@ -545,6 +545,53 @@ Replace `_load_policy_references()` in `retrieval/policy_repository.py` with a C
 
 ---
 
+## ADR-012: Coverage Validation Agent v1 — JSON-Backed Retrieval, No ChromaDB
+
+**Status:** Decided — implemented
+**Decided:** Sprint 9
+
+### Context
+
+The Coverage Validation Agent (Phase 5 in the roadmap) requires a retrieval layer to ground LLM reasoning in policy documents. The full retrieval pipeline — `retrieval/ingest.py` (CMS Coverage API client), `retrieval/chunking.py` (section-aware splitting), `retrieval/vector_store.py` (ChromaDB interface) — is a 2–3 session effort with external dependencies (ChromaDB, ~90MB download) and requires live CMS API access for ingestion. These dependencies were out of scope for Sprint 9, whose goal was to ship the first live LLM call with proper governance.
+
+### Decision
+
+Coverage Validation Agent v1 uses the existing JSON-backed policy repository (`retrieval/policy_repository.py`) for retrieval. Three LCD-style entries were added to `data/reference/policy_examples.json` with diagnosis-driven `applies_to_codes` (ICD-10 codes, not CPT codes): `LCD_E_M_MEDICAL_NECESSITY_Z00`, `LCD_E_M_MEDICAL_NECESSITY_I10`, `LCD_PREVENTIVE_99395_COVERAGE`. The agent calls `find_policies_by_codes(cpt_codes, icd10_codes)` and filters to `source_type in {"LCD", "NCD"}` — no ChromaDB, no CMS API ingestion.
+
+All other agent governance decisions are identical to what the ChromaDB version will use:
+- One model call per invocation (`tool_choice={"type": "any"}`, max 3 policies)
+- Two-tool schema: `report_coverage_finding` and `no_coverage_concern`
+- Citation grounding: `citation_doc_id` must be in the retrieved set or the finding is suppressed
+- No finding without an API key; no finding without matching LCD/NCD policy; no finding on model error
+
+### Rationale
+
+**Ship the governance contract now.** The most important design decisions in the coverage agent are not retrieval mechanics — they are the citation grounding rule, the tool-use schema, the error isolation, and the session state integration. These can all be built, tested, and validated against the JSON policy repository without ChromaDB. The ChromaDB upgrade changes only the retrieval call; all governance remains identical.
+
+**Avoid heavyweight dependencies in Sprint 9.** ChromaDB installs as a ~90MB package and requires initialization before indexing can run. Requiring this for a sprint whose goal is to demonstrate the first LLM call creates unnecessary risk of setup friction at demo time.
+
+**Diagnosis-driven applies_to_codes.** LCD entries use ICD-10 codes in `applies_to_codes` rather than CPT codes. This avoids false retrieval: if 99213/99214 were in `applies_to_codes`, the coverage agent would retrieve and analyze E/M coverage policies for every claim containing those codes — including claims where the E/M is not in question. Diagnosis-driven retrieval means coverage analysis is triggered by the diagnostic context (Z00.00 = well visit with possible medical necessity concern) rather than the procedure.
+
+**One-call cost protection.** `tool_choice={"type": "any"}` guarantees the model calls exactly one tool, keeping the cost per button click to a single API call. Combined with the no-automatic-call requirement, this ensures the "Run AI Coverage Analysis" button is the only trigger point for LLM spend.
+
+### Upgrade Path
+
+Replace the `find_policies_by_codes(...)` call and `_LCD_SOURCE_TYPES` filter in `coverage_validation.py` with `retrieval.vector_store.query(text, n_results=_MAX_POLICIES)` after Phase 4 is complete. The `validate_coverage(claim)` signature, tool schema, citation grounding logic, and all tests are unaffected by this change. The JSON entries can be retained as regression fixtures.
+
+### Alternatives Considered
+
+- **Ship ChromaDB in Sprint 9:** Rejected — too heavy for a sprint focused on governance wiring. First LLM call should be simple enough to reason about completely.
+- **Stub the retrieval call (always return the same 3 docs):** Rejected — this doesn't test the retrieval filter or the "no matching policy → no finding" governance path.
+- **Use CPT codes in applies_to_codes:** Rejected — leads to retrieval of E/M coverage policies for every claim with an office visit code, regardless of whether coverage is actually in question.
+
+### Implications
+
+- The coverage agent v1 can only produce findings for claims with ICD-10 codes in the JSON policy corpus (currently: Z00.00, I10, Z00.01, 99395 via applies_to_codes). All other claims correctly produce no AI finding.
+- `tests/test_coverage_validation.py` tests all governance paths without real API calls. Mock is applied at `agents.coverage_validation.anthropic.Anthropic` — the same boundary used for all future agent tests.
+- `ANTHROPIC_MODEL` env var overrides the default model (`claude-haiku-4-5`); `claude-sonnet-4-5` or `claude-sonnet-4-6` can be selected for higher reasoning quality.
+
+---
+
 ## Tradeoffs Summary
 
 | Decision | Speed | Correctness | Explainability | Future-Proofing |

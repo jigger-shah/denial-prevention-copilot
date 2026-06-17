@@ -1,9 +1,9 @@
 # Repository Status Report — Denial Prevention Copilot
 
 **Generated:** 2026-06-16
-**Sprint:** 8 complete (UI/UX hardening — checks-run metadata, button styling, NPI display fixes)
+**Sprint:** 9 complete (Coverage Validation Agent v1 — first LLM integration, JSON-backed retrieval, citation grounding)
 **Branch:** main
-**Last commit:** UI/UX fixes — CHECKS_RUN metadata, always-visible checks display, blue primary button
+**Last commit:** Coverage Validation Agent v1 — validate_coverage(), two-tool schema, citation grounding, 14 tests
 
 ---
 
@@ -27,18 +27,18 @@
 
 ### Maturity
 
-The Denial Prevention Copilot is a **well-architected early prototype** with a complete structural skeleton, a fully operational governance/audit layer, and three production-grade rule engines backed by real CMS reference data. The project has completed Phase A + B of Phase 3 and Sprint 8 (UI/UX hardening). The application runs end-to-end — a claim goes in, deterministic rules fire against real CMS NCCI edits and MUE table, and NPI validates via Luhn + NPPES. Findings display with structured citations, the checks-run list is always visible (with short-circuit detection), and a human decision is written to an append-only audit log. The core AI differentiator (LLM agents, RAG pipeline) remains in stub form, but the deterministic layer is complete for MVP purposes.
+The Denial Prevention Copilot is a **well-architected early prototype** with a complete structural skeleton, a fully operational governance/audit layer, three production-grade rule engines backed by real CMS reference data, and the first operational LLM agent. The project has completed Phase A + B of Phase 3, Sprint 8 (UI/UX hardening), and Sprint 9 (Coverage Validation Agent v1). The application runs end-to-end — a claim goes in, deterministic rules fire against real CMS NCCI edits and MUE table, and NPI validates via Luhn + NPPES. The new AI Coverage Analysis button invokes Claude via structured tool use to evaluate coverage against retrieved LCD/NCD policy documents, producing cited medical necessity findings. Findings display with structured citations, the checks-run list is always visible (with short-circuit detection), and a human decision is written to an append-only audit log. The RAG pipeline (ChromaDB, CMS Coverage API) remains deferred, but the first LLM agent is live.
 
-### MVP Completion: ~47–50%
+### MVP Completion: ~55–60%
 
-The project has strong bones and the first real meat. The scaffolding is production-quality; NCCI bundling detection is now genuine (~1.73M real CMS pairs). The intelligence layer is not yet started. The governance and audit infrastructure is complete; the agent and RAG layers are 0% implemented.
+The project has strong bones and the first real meat. The scaffolding is production-quality; NCCI bundling detection is now genuine (~1.73M real CMS pairs). The first LLM agent (Coverage Validation Agent v1) is live. The governance and audit infrastructure is complete; one agent is implemented, three remain stubs, and the RAG pipeline is ~0% built.
 
 ### Strengths
 
 - **Governance-first design:** Citation as a first-class dataclass, SHA-256 finding IDs, append-only SQLite, human-in-loop enforcement — these are production-grade governance patterns built before any LLM exists. This is architecturally rare and directly addresses the PRD governance controls requirement (P0).
 - **Clean separation of concerns:** Rule layer → orchestrator → agents → denial prevention is enforced at every level. `rule_engine.py` calls no LLM; `agents/` calls no DB. This modularity makes each layer independently testable and replaceable.
 - **Decision record discipline:** 11 Architecture Decision Records written (ADR-011 added for file-backed NCCI), deferral triggers documented, future replacement points mapped. This is unusually rigorous for a prototype.
-- **186 tests, all passing:** Tests now cover NPI validation (13 tests, all mocked), NCCI loader (44 tests), MUE loader + rule (35 tests), rule engine (23 tests, including 3 new CHECKS_RUN metadata tests + NPI short-circuit verification), audit governance, claim intake (including units propagation), and policy repository. `tests/test_rules.py` has 48 tests (was a stub).
+- **200 tests, all passing:** Tests now cover NPI validation (13 tests, all mocked), NCCI loader (44 tests), MUE loader + rule (35 tests), rule engine (23 tests, including 3 new CHECKS_RUN metadata tests + NPI short-circuit verification), audit governance, claim intake (including units propagation), policy repository, and coverage validation agent (14 tests, all mocked — no real API calls). `tests/test_rules.py` has 48 tests (was a stub).
 - **Real NCCI PTP edits:** Sprint 5 replaced the 1-pair hardcoded lookup with a file-backed loader reading CMS quarterly xlsx files. ~1.73 million active edit pairs across 4 files (ccipra-v322r0-f1 through f4). Modifier 0/1/9 semantics handled. Bidirectional lookup. `functools.lru_cache` for process-lifetime performance. Synthetic fallback when CMS files absent.
 - **MUE ingestion (Sprint 6):** `rules/mue_loader.py` + `rules/mue.py` implement file-backed MUE lookup from `data/reference/mue/` with column-name discovery, `lru_cache`, and synthetic fallback. MAI-aware severity: MAI=1 → HIGH, MAI=2/3 → MEDIUM. Wired into rule engine after NCCI.
 - **Units field support (Sprint 6):** `build_manual_claim()` now populates `ClaimIn.units` (CPT → unit count) from the service-line grid. UI grid has a Units column. `WORKED_EXAMPLE` updated to include units per service line. MUE check uses this field.
@@ -47,10 +47,10 @@ The project has strong bones and the first real meat. The scaffolding is product
 
 ### Key Gaps
 
-- **All four PRD agents are stubs** — `agents/` contains only docstrings. No LLM call has been made.
+- **Three PRD agents still stubs** — `agents/coding_validation.py`, `agents/documentation_review.py`, `agents/denial_prevention.py`, and `agents/orchestrator.py` contain only docstrings. `agents/coverage_validation.py` is now implemented (Sprint 9).
 - **Rule data mostly synthetic** — NCCI is now real (~1.73M pairs). Code validity still has 2 hardcoded rules. MUE real (Q3 2026 file). NPI now validates via Luhn + NPPES live lookup.
-- **RAG pipeline not built** — `retrieval/chunking.py`, `retrieval/ingest.py`, `retrieval/vector_store.py` are empty modules. No CMS LCD/NCD has been ingested.
-- **Accuracy unverifiable** — The PRD targets ≥90% precision and ≥85% recall. With no agents, these cannot be evaluated.
+- **RAG pipeline not built** — `retrieval/chunking.py`, `retrieval/ingest.py`, `retrieval/vector_store.py` are empty modules. Coverage agent v1 uses the JSON policy repository as a substitute; ChromaDB upgrade is deferred.
+- **Accuracy unverifiable** — The PRD targets ≥90% precision and ≥85% recall. With only one agent and no golden set, these cannot be evaluated.
 
 ---
 
@@ -134,7 +134,8 @@ The project has strong bones and the first real meat. The scaffolding is product
 | Code validity | `rules/code_validity.py` | Partial | 2 hardcoded rules (Z00.00 + problem E/M conflict; missing modifier 25) |
 | Shared models | `rules/models.py` | Active | `ClaimIn`, `Citation`, `Finding` dataclasses |
 | Audit repository | `db/audit_repository.py` | Active | `AuditDecision` dataclass; append-only SQLite; governance enforcement at save |
-| Policy repository | `retrieval/policy_repository.py` | Partial | JSON-backed policy lookup; ChromaDB-compatible public interface; 5 synthetic entries |
+| Policy repository | `retrieval/policy_repository.py` | Partial | JSON-backed policy lookup; ChromaDB-compatible public interface; 8 entries (5 original + 3 new LCD entries for coverage agent v1) |
+| Coverage validation agent | `agents/coverage_validation.py` | Active (v1) | `validate_coverage(claim)`: retrieves LCD/NCD policies from JSON repo, calls Claude via structured tool use (two-tool schema), enforces citation grounding, returns 0 or 1 Finding |
 
 ### Data Flow (Active Path)
 
@@ -284,17 +285,34 @@ A full service-line coding grid: CPT code, ICD-10 codes, modifiers, units, place
 
 | Attribute | Value |
 |---|---|
-| Status | Partial — interface ready, data synthetic |
+| Status | Partial — interface ready, 8 entries (5 original + 3 LCD entries for coverage agent v1) |
 | Files | `retrieval/policy_repository.py`, `data/reference/policy_examples.json` |
 
-JSON-backed policy reference service with a ChromaDB-compatible public interface: `find_policy_by_document_id()`, `find_policies_by_codes()`, `get_citation_detail()`. Interface designed as a drop-in replacement for ChromaDB once the RAG pipeline is built (ADR-009). Currently holds 5 synthetic policy examples.
+JSON-backed policy reference service with a ChromaDB-compatible public interface: `find_policy_by_document_id()`, `find_policies_by_codes()`, `get_citation_detail()`. Interface designed as a drop-in replacement for ChromaDB once the RAG pipeline is built (ADR-009). Sprint 9 added 3 LCD-style entries with diagnosis-driven `applies_to_codes` (ICD-10 codes rather than CPT codes) to enable targeted coverage agent retrieval without pulling E/M policies for every claim.
 
-### Feature 10: Test Suite
+### Feature 10: Coverage Validation Agent v1
 
 | Attribute | Value |
 |---|---|
-| Status | 186 tests passing; `test_orchestrator.py` is a stub; `test_rules.py` has real coverage |
-| Files | `tests/test_audit.py`, `tests/test_claim_intake.py`, `tests/test_policy_repository.py`, `tests/test_rule_engine.py`, `tests/test_rules.py`, `tests/test_ncci_loader.py`, `tests/test_orchestrator.py` |
+| Status | Active (v1 — JSON-backed retrieval, no ChromaDB) |
+| Files | `agents/coverage_validation.py`, `tests/test_coverage_validation.py` |
+
+`validate_coverage(claim: ClaimIn) -> list[Finding]` is the first production LLM integration in the codebase. Governance rules enforced:
+- No API key → return [] (checked at call time via `os.getenv`)
+- No retrieved LCD/NCD policy → return [] (checked before model call)
+- One model call per invocation (`tool_choice={"type": "any"}` forces tool use)
+- Model must call a tool; otherwise → return []
+- `citation_doc_id` not in retrieved set → suppress finding (hallucination grounding)
+- Model exception → return [] (no propagation)
+
+Two-tool schema: `report_coverage_finding` (issue, recommendation, severity, confidence, citation fields) and `no_coverage_concern` (reason). UI: "🤖 Run AI Coverage Analysis" button appears after rule review when `ANTHROPIC_API_KEY` is set. Sidebar shows AI enabled/disabled status. AI findings use the same `_finding_card` component and the same audit trail as rule findings.
+
+### Feature 11: Test Suite
+
+| Attribute | Value |
+|---|---|
+| Status | 200 tests passing; `test_orchestrator.py` is a stub; `test_rules.py` has real coverage |
+| Files | `tests/test_audit.py`, `tests/test_claim_intake.py`, `tests/test_policy_repository.py`, `tests/test_rule_engine.py`, `tests/test_rules.py`, `tests/test_ncci_loader.py`, `tests/test_orchestrator.py`, `tests/test_coverage_validation.py` |
 
 | Test File | Lines | Coverage Focus |
 |---|---|---|
@@ -304,6 +322,7 @@ JSON-backed policy reference service with a ChromaDB-compatible public interface
 | `test_rule_engine.py` | ~310 | Rule dispatch, finding_id stamping, severity sorting, CHECKS_RUN structure + coverage, NPI short-circuit behavior (23 tests) |
 | `test_ncci_loader.py` | ~420 | File discovery, xlsx loading, active/deleted filter, bidirectional lookup, file-backed findings, synthetic fallback, real-file integration (44 tests) |
 | `test_rules.py` | ~550 | NCCI pair detection, code validity, MUE (35 tests), NPI (13 tests — all mocked) |
+| `test_coverage_validation.py` | ~200 | Coverage agent: pre-flight guards (no API key, no policy), tool-use response parsing, citation grounding, hallucination suppression, exception handling, stable finding_id (14 tests — all mocked) |
 | `test_orchestrator.py` | 15 | Stub — placeholder tests only |
 
 ### Feature 11: Architecture Documentation
@@ -326,7 +345,7 @@ JSON-backed policy reference service with a ChromaDB-compatible public interface
 | NPI validation | P0 | Complete | `rules/npi.py`: Luhn check + NPPES live lookup; HIGH/MEDIUM/no-finding paths; short-circuit on HIGH; NPPES timeout silenced |
 | ICD-10-CM code validity | P0 | Partial | `rules/code_validity.py`: 2 hardcoded rules; no reference file loaded |
 | HCPCS/CPT code validity | P0 | Partial | Same file; no CPT crosswalk loaded |
-| Coverage validation agent (RAG + LLM) | P0 | Not Started | `agents/coverage_validation.py`: docstring only |
+| Coverage validation agent (RAG + LLM) | P0 | Partial (v1) | `agents/coverage_validation.py`: implemented; JSON-backed retrieval (no ChromaDB); structured tool use; citation grounding enforced; ChromaDB RAG upgrade deferred |
 | Documentation review agent | P0 | Not Started | `agents/documentation_review.py`: docstring only |
 | Denial prevention synthesis | P0 | Not Started | `agents/denial_prevention.py`: docstring only |
 | Orchestrator (parallel agents) | P0 | Not Started | `agents/orchestrator.py`: docstring only |
@@ -351,7 +370,7 @@ JSON-backed policy reference service with a ChromaDB-compatible public interface
 | No PHI constraint | Requirement | Complete | PHI-guard caption; synthetic data only |
 | Synthetic data only | Requirement | Complete | No real claims in codebase or data files |
 
-**Summary:** 16 of 28 tracked requirements are Complete (NPI validation promoted from Partial to Complete in Sprint 7; MUE promoted in Sprint 6). 9 partially implemented. 9 Not Started. 4 Not Measurable (require the agent/eval layer).
+**Summary:** 16 of 28 tracked requirements are Complete (NPI validation promoted from Partial to Complete in Sprint 7; MUE promoted in Sprint 6). Coverage agent promoted from Not Started to Partial (Sprint 9 — v1 with JSON-backed retrieval). 8 partially implemented. 8 Not Started. 4 Not Measurable (require the agent/eval layer).
 
 ---
 
@@ -365,7 +384,9 @@ NCCI PTP edits are now real (Sprint 5). The remaining deterministic layer gaps a
 - **NPI validation:** ✅ Complete in Sprint 7. `rules/npi.py` with Luhn check and NPPES live lookup.
 - **ICD-10-CM and CPT reference files:** `rules/code_validity.py` has 2 hardcoded rules. Need FY2026 ICD-10-CM reference data and CPT crosswalk loaded from `data/reference/`.
 
-### Gap 2: LCD/NCD Retrieval Pipeline (Phase 4)
+### Gap 2: LCD/NCD Retrieval Pipeline — ChromaDB (Phase 4)
+
+The coverage validation agent v1 uses the JSON policy repository (3 LCD entries) as a retrieval substitute. The full ChromaDB RAG pipeline is not yet built:
 
 The coverage validation agent requires a working RAG layer. All three retrieval modules are stubs:
 - `retrieval/ingest.py` — CMS Coverage API client
@@ -374,9 +395,9 @@ The coverage validation agent requires a working RAG layer. All three retrieval 
 
 `retrieval/policy_repository.py` has the right public interface and 5 synthetic examples, designed for ChromaDB backend swap without changing the agent interface (ADR-009).
 
-### Gap 3: Coverage Validation Agent (Phase 5)
+### Gap 3: Coverage Validation Agent — v2 ChromaDB Upgrade (Phase 5 v2)
 
-`agents/coverage_validation.py` is a docstring. This is the most complex agent: query vector store with dx/procedure pair → call Claude Sonnet 4.6 via structured tool use → synthesize findings with mandatory citations from retrieved LCD/NCD text. No finding without a retrieved source.
+`agents/coverage_validation.py` is implemented (Sprint 9 — v1). The v1 uses the JSON policy repository for retrieval (3 LCD entries) and calls Claude via structured tool use with citation grounding enforced. The remaining gap is the ChromaDB RAG upgrade: replace JSON retrieval with `retrieval/vector_store.py` queries against real CMS LCD/NCD documents. The public interface (`validate_coverage(claim: ClaimIn)`) is unchanged; only `find_policies_by_codes()` call is replaced.
 
 ### Gap 4: Documentation Review Agent (Phase 6)
 

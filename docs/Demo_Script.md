@@ -123,6 +123,34 @@
 
 ---
 
+### Step 2.5: AI Coverage Analysis (60 seconds) — *Requires ANTHROPIC_API_KEY in .env*
+
+> "Below the rule findings, you'll see an AI Coverage Analysis section. This is the first LLM-backed check — it reasons about medical necessity against coverage policy documents, not just coding rules.
+>
+> [Click '🤖 Run AI Coverage Analysis']
+>
+> The system retrieves the policy documents relevant to this claim's diagnosis codes and sends them — along with the claim — to Claude. One API call, per button click. Claude must call one of two tools: `report_coverage_finding` if it identifies a concern, or `no_coverage_concern` if the policies support coverage.
+>
+> [While spinner runs:]
+>
+> What makes this different from a rule check: the AI is reasoning over the actual policy text — the LCD language about when a problem-oriented E/M is separately reimbursable alongside a preventive visit. The rule layer knows Z00.00 and 99214 conflict; the AI knows *why* that conflict matters and can explain it in plain language with a citation.
+>
+> [Finding appears:]
+>
+> The finding has the same structure as a rule finding: severity badge, issue text, recommendation, and a citation. The citation shows the specific policy section and an excerpt from the LCD text the model was reasoning over.
+>
+> [Expand 'View policy detail']
+>
+> The `document_id` in the citation must match one of the policy documents that was actually retrieved. If the model tried to cite a document that wasn't in the retrieved set, the finding would be suppressed. That's the citation grounding rule: no hallucinated policy references.
+>
+> The AI finding can be accepted, overridden, and saved to the audit trail — identical workflow to rule findings. The audit record shows `source = 'agent_layer'` distinguishing it from `'rule_layer'` findings."
+
+**If no AI key available:**
+
+> "Without an API key, the AI section shows 'AI Coverage Analysis disabled' in the sidebar — the rest of the app runs exactly the same. The architecture is designed so AI is additive: the rule layer provides the deterministic foundation, and the AI layer adds coverage reasoning where the policies are nuanced. Removing the AI key degrades to a rules-only mode, not a broken state."
+
+---
+
 ### Step 3: Human Decision Workflow (60 seconds)
 
 > "Every decision is made by a named specialist. My name is in the sidebar.
@@ -174,7 +202,9 @@
 >
 > The governance layer — the audit trail, the citation requirement, the human-in-loop workflow — was built before the AI. Not after. This is a deliberate product decision: if governance is retrofitted after AI, every path that produces findings has to be updated. Built first, every future agent inherits the contract.
 >
-> The agent layer is the next phase. Coverage validation reasons over retrieved LCD/NCD text — that's where the LLM earns its role: medical necessity determination is reasoning over unstructured policy, not a lookup. Every coverage finding will require a citation sourced from a retrieved document chunk. No citation, no finding. That rule is enforced at the persistence layer, not by convention.
+> The agent layer — you just saw the first one. Coverage validation reasons over retrieved LCD/NCD text — that's where the LLM earns its role: medical necessity determination is reasoning over unstructured policy, not a lookup. Every coverage finding requires a citation sourced from a retrieved document. No citation, no finding. That rule is enforced in the agent, not by convention.
+>
+> The next phase extends the RAG pipeline: replacing the JSON policy corpus with ChromaDB and real CMS LCD/NCD documents. The agent interface doesn't change — only the retrieval call behind it.
 >
 > The product builds from the outside in: governance and determinism established, AI layer drops in behind them."
 

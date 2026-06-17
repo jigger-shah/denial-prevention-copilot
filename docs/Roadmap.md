@@ -305,8 +305,8 @@ Build the data pipeline that fetches CMS coverage policies (LCDs and NCDs) and i
 
 ## Phase 5 — Coverage Validation Agent
 
-**Status:** Future  
-**Estimated scope:** 3–4 implementation sessions
+**Status:** v1 complete (JSON-backed retrieval, no ChromaDB); ChromaDB RAG upgrade deferred to Phase 5 v2  
+**Estimated scope (v2 ChromaDB upgrade):** 2–3 implementation sessions
 
 ### Objectives
 Implement the first LLM agent. Wire Claude Sonnet 4.6 via the Anthropic SDK with structured tool use to reason over retrieved LCD/NCD text and produce cited medical necessity findings.
@@ -493,7 +493,8 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 | 2.8 — File-Backed NCCI PTP | ✅ | ncci_loader, ~1.73M active pairs, 127 tests | P0 |
 | 3 — Complete Deterministic Layer | ✅ MVP-complete | Phase A+B+Sprint 8 done (Units + MUE + NPI + UI); ICD-10-CM deferred | P0 |
 | 4 — LCD/NCD Retrieval | 🔜 | ChromaDB, CMS ingestion | P0 (dep) |
-| 5 — Coverage Agent | 🔜 | First LLM agent, RAG findings | P0 |
+| 5 — Coverage Agent v1 | ✅ v1 complete | JSON-backed retrieval, structured tool use, citation grounding, 14 mocked tests (Sprint 9) | P0 |
+| 5v2 — Coverage Agent (ChromaDB) | 🔜 | Swap JSON retrieval for ChromaDB after Phase 4 | P0 |
 | 6 — Documentation Agent | 🔜 | Clinical note analysis | P1 |
 | 7 — Orchestrator + Synthesis | 🔜 | Full 4-agent pipeline | P0 |
 | 8 — Evaluation | 🔜 | Golden set, precision/recall | P0 metric |

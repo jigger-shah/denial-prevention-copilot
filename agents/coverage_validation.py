@@ -1,17 +1,256 @@
 """
-Coverage Validation Agent.
+Coverage Validation Agent — v1 (JSON-backed retrieval, no ChromaDB).
 
-Retrieval-grounded reasoning for medical necessity and coverage policy:
-  - Query retrieval.vector_store with the claim's diagnosis + procedure combination
-    to retrieve relevant NCD/LCD sections.
-  - Use the Claude API (structured tool use) to reason over retrieved text: does the
-    documented diagnosis support the procedure under the governing LCD/NCD?
-  - Flag diagnosis-to-procedure mismatches, missing required diagnoses for coverage,
-    and procedure limitations (frequency, setting, beneficiary age).
+Retrieves up to 3 LCD/NCD policy documents from the JSON policy repository
+that match the claim's CPT and ICD-10 codes, then asks Claude (via structured
+tool use) to evaluate coverage and medical necessity.
 
-Every finding must carry a citation (document_id, section, effective_date) sourced
-from the retrieved text. Findings without a verifiable citation are suppressed.
-
-Primary sources: CMS Coverage API via retrieval.vector_store (NCD/LCD chunks).
-Returns a list of Finding objects with source="coverage_validation".
+Governance rules (all enforced here):
+  - No API key → return []
+  - No retrieved LCD/NCD policy → return []
+  - One model call per invocation, no background calls
+  - Model must call a tool (tool_choice="any"); otherwise return []
+  - citation_doc_id not in retrieved set → suppress finding
+  - Model raises exception → return []
 """
+
+import hashlib
+import logging
+import os
+
+import anthropic
+from dotenv import load_dotenv
+
+from retrieval.policy_repository import find_policies_by_codes
+from rules.models import Citation, ClaimIn, Finding
+
+load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+_DEFAULT_MODEL = "claude-haiku-4-5"
+_LCD_SOURCE_TYPES = {"LCD", "NCD"}
+_MAX_POLICIES = 3
+
+_SYSTEM_PROMPT = (
+    "You are a medical billing compliance specialist reviewing a healthcare claim "
+    "for potential coverage and medical necessity issues before submission.\n\n"
+    "You will be given a claim summary and relevant Local Coverage Determinations (LCDs) "
+    "or National Coverage Determinations (NCDs). Your task is to identify whether the "
+    "claim has a coverage or medical necessity concern based solely on the provided policy text.\n\n"
+    "Rules:\n"
+    "- Only cite a policy document that was provided to you in this message.\n"
+    "- Do not invent, guess, or recall policy text from training data.\n"
+    "- If the provided policies clearly support coverage, call no_coverage_concern.\n"
+    "- If you identify a coverage or medical necessity concern supported by the policy text, "
+    "call report_coverage_finding with a specific citation from the provided documents.\n"
+    "- You must call exactly one tool."
+)
+
+_TOOLS = [
+    {
+        "name": "report_coverage_finding",
+        "description": (
+            "Report a coverage or medical necessity concern identified in the claim. "
+            "Only call this tool if you found a specific concern supported by the provided policy text. "
+            "You must cite a document_id from the policies provided in this message."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "issue": {
+                    "type": "string",
+                    "description": "Short description of the coverage or medical necessity concern.",
+                },
+                "recommendation": {
+                    "type": "string",
+                    "description": "What the billing specialist should do to resolve or document this concern.",
+                },
+                "severity": {
+                    "type": "string",
+                    "enum": ["HIGH", "MEDIUM", "LOW"],
+                    "description": "HIGH = likely denial, MEDIUM = documentation gap, LOW = advisory.",
+                },
+                "confidence": {
+                    "type": "number",
+                    "description": "Confidence score 0.0–1.0 that this is a real coverage concern.",
+                },
+                "citation_doc_id": {
+                    "type": "string",
+                    "description": "document_id of the policy document being cited (must be from the provided list).",
+                },
+                "citation_section": {
+                    "type": "string",
+                    "description": "Section name or heading within the cited document.",
+                },
+                "citation_excerpt": {
+                    "type": "string",
+                    "description": "Verbatim excerpt from the cited document that supports this finding.",
+                },
+            },
+            "required": [
+                "issue",
+                "recommendation",
+                "severity",
+                "confidence",
+                "citation_doc_id",
+                "citation_section",
+                "citation_excerpt",
+            ],
+        },
+    },
+    {
+        "name": "no_coverage_concern",
+        "description": (
+            "Call this tool when the provided policies support coverage and you have "
+            "no coverage or medical necessity concern to report."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "description": "Brief explanation of why no concern was found.",
+                },
+            },
+            "required": ["reason"],
+        },
+    },
+]
+
+
+def validate_coverage(claim: ClaimIn) -> list[Finding]:
+    """
+    Run coverage validation for a claim. Returns a list of Finding objects
+    (0 or 1 in practice — one model call, one tool call).
+
+    Returns [] if no API key, no matching LCD/NCD policies, model error, or
+    model calls no_coverage_concern.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return []
+
+    all_policies = find_policies_by_codes(
+        cpt_codes=claim.cpt_codes,
+        icd10_codes=claim.icd10_codes,
+    )
+    lcd_policies = [p for p in all_policies if p.get("source_type") in _LCD_SOURCE_TYPES]
+    if not lcd_policies:
+        return []
+
+    lcd_policies = lcd_policies[:_MAX_POLICIES]
+    retrieved_doc_ids = {p["document_id"] for p in lcd_policies}
+
+    model = os.getenv("ANTHROPIC_MODEL", _DEFAULT_MODEL)
+    user_message = _build_user_message(claim, lcd_policies)
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model=model,
+            max_tokens=1024,
+            system=_SYSTEM_PROMPT,
+            tools=_TOOLS,
+            tool_choice={"type": "any"},
+            messages=[{"role": "user", "content": user_message}],
+        )
+    except Exception as exc:
+        logger.warning("Coverage validation API error: %s", exc)
+        return []
+
+    return _parse_response(response, retrieved_doc_ids, lcd_policies, claim.claim_id)
+
+
+def _build_user_message(claim: ClaimIn, lcd_policies: list[dict]) -> str:
+    cpt = ", ".join(claim.cpt_codes) if claim.cpt_codes else "none"
+    icd = ", ".join(claim.icd10_codes) if claim.icd10_codes else "none"
+    mods = ", ".join(claim.modifiers) if claim.modifiers else "none"
+
+    policy_blocks = []
+    for p in lcd_policies:
+        policy_blocks.append(
+            f"--- POLICY DOCUMENT ---\n"
+            f"document_id: {p['document_id']}\n"
+            f"title: {p['title']}\n"
+            f"section: {p['section']}\n"
+            f"effective_date: {p.get('effective_date', 'N/A')}\n"
+            f"excerpt:\n{p['excerpt']}"
+        )
+
+    return (
+        f"CLAIM SUMMARY\n"
+        f"Claim ID: {claim.claim_id}\n"
+        f"CPT codes: {cpt}\n"
+        f"ICD-10 codes: {icd}\n"
+        f"Modifiers: {mods}\n"
+        f"Place of service: {claim.place_of_service}\n"
+        f"Payer: {claim.payer}\n\n"
+        f"RELEVANT POLICY DOCUMENTS ({len(lcd_policies)} retrieved)\n\n"
+        + "\n\n".join(policy_blocks)
+        + "\n\n"
+        "Review this claim against the policy documents above. Call report_coverage_finding "
+        "if you identify a coverage or medical necessity concern, or call no_coverage_concern "
+        "if the policies support coverage."
+    )
+
+
+def _parse_response(
+    response: object,
+    retrieved_doc_ids: set[str],
+    lcd_policies: list[dict],
+    claim_id: str,
+) -> list[Finding]:
+    for block in response.content:
+        if block.type != "tool_use":
+            continue
+
+        if block.name == "no_coverage_concern":
+            return []
+
+        if block.name == "report_coverage_finding":
+            args = block.input
+            doc_id = args.get("citation_doc_id", "")
+
+            # Citation grounding: suppress if doc_id not in what we retrieved
+            if doc_id not in retrieved_doc_ids:
+                logger.warning(
+                    "Coverage agent cited doc_id %r not in retrieved set %r — suppressed",
+                    doc_id,
+                    retrieved_doc_ids,
+                )
+                return []
+
+            policy = next((p for p in lcd_policies if p["document_id"] == doc_id), {})
+            citation = Citation(
+                source="coverage_validation",
+                doc_id=doc_id,
+                section=args.get("citation_section", policy.get("section", "")),
+                edition=policy.get("edition", ""),
+                effective_date=policy.get("effective_date"),
+                excerpt=args.get("citation_excerpt", ""),
+            )
+
+            severity = args.get("severity", "MEDIUM")
+            if severity not in ("HIGH", "MEDIUM", "LOW"):
+                severity = "MEDIUM"
+
+            finding = Finding(
+                rule="coverage_validation",
+                severity=severity,
+                issue=args.get("issue", "Coverage concern identified"),
+                recommendation=args.get("recommendation", "Review policy and documentation."),
+                citation=citation,
+                confidence=float(args.get("confidence", 0.7)),
+                source="agent_layer",
+            )
+            finding.finding_id = _stable_finding_id(claim_id, doc_id, finding.issue)
+            return [finding]
+
+    # Model produced no tool_use block — no finding
+    return []
+
+
+def _stable_finding_id(claim_id: str, doc_id: str, issue: str) -> str:
+    payload = f"{claim_id}|{doc_id}|{issue}"
+    return "cov-" + hashlib.sha256(payload.encode()).hexdigest()[:12]

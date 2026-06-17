@@ -94,5 +94,41 @@
     "excerpt": "Medically Unlikely Edits (MUEs) define the maximum number of units of service a provider would bill under most circumstances for a single beneficiary on a single date of service. For most laboratory panel codes (80048–80076), the MUE value is 1 unit per date of service. Billing units greater than the MUE value results in an automatic claim line denial. Modifier Adjudication Indicator (MAI) 3 means the MUE is a hard limit based on clinical criteria and cannot be overridden by clinical documentation alone.",
     "applies_to_codes": ["80048", "80053", "80076"],
     "notes": "MUE limits are published quarterly by CMS. For panel codes, 1 unit per date is the standard limit. This entry is illustrative of MUE logic for the synthetic claim set."
+  },
+  {
+    "document_id": "LCD_E_M_MEDICAL_NECESSITY_Z00",
+    "source_type": "LCD",
+    "title": "Local Coverage Determination — Medical Necessity for Problem-Oriented E/M Services Billed with Preventive Diagnosis (Illustrative)",
+    "section": "Indications and Limitations of Coverage and/or Medical Necessity",
+    "effective_date": "2024-01-01",
+    "edition": "LCD Sample Reference (illustrative; based on CMS LCD policy principles)",
+    "source_url": "https://www.cms.gov/medicare-coverage-database/view/lcd.aspx",
+    "excerpt": "Problem-oriented Evaluation and Management (E/M) services (CPT 99202–99215) billed with a primary diagnosis of Z00.00 (Encounter for general adult medical examination without abnormal findings) are subject to medical necessity review. When the primary reason for the encounter is a routine preventive examination (Z00.xx), a separately identifiable problem-oriented E/M service requires: (1) documentation of a distinct medical condition addressed during the visit, (2) a separate problem diagnosis code beyond the preventive diagnosis, and (3) modifier 25 appended to the E/M code. Failure to meet these requirements may result in denial of the problem-oriented E/M as not medically necessary or as a duplicate of the preventive service. Payers may require that the separate condition be a new or worsening problem, not a chronic stable condition routinely monitored at preventive visits.",
+    "applies_to_codes": ["Z00.00"],
+    "notes": "This LCD-style reference applies when Z00.00 is the primary or only diagnosis on a claim containing problem-oriented E/M codes. Coverage concern is triggered when no separate problem diagnosis is present alongside the preventive diagnosis, or when modifier 25 is absent. Designed for use with coverage validation agent v1."
+  },
+  {
+    "document_id": "LCD_E_M_MEDICAL_NECESSITY_I10",
+    "source_type": "LCD",
+    "title": "Local Coverage Determination — Medical Necessity for E/M Services: Hypertension Management (Illustrative)",
+    "section": "Covered Indications",
+    "effective_date": "2024-01-01",
+    "edition": "LCD Sample Reference (illustrative; based on CMS LCD policy principles)",
+    "source_url": "https://www.cms.gov/medicare-coverage-database/view/lcd.aspx",
+    "excerpt": "Evaluation and Management (E/M) services (CPT 99202–99215) are considered medically necessary when performed for the evaluation, management, or monitoring of Essential Hypertension (ICD-10-CM I10). Hypertension is a chronic condition that frequently requires ongoing clinical assessment, medication management, and complication screening. Office or outpatient E/M services billed with a primary diagnosis of I10 are generally supported as medically necessary when the visit documentation reflects blood pressure assessment, medication review or adjustment, and/or evaluation for target organ damage. No additional LCD restrictions apply to routine hypertension management E/M visits when adequately documented.",
+    "applies_to_codes": ["I10"],
+    "notes": "I10 is a well-supported indication for E/M services. Coverage validation agent should return no concern for I10-only claims with appropriate E/M codes. Designed as the 'no concern' test case for coverage validation agent v1."
+  },
+  {
+    "document_id": "LCD_PREVENTIVE_99395_COVERAGE",
+    "source_type": "LCD",
+    "title": "Local Coverage Determination — Preventive Medicine Services: Periodic Comprehensive Preventive Visit, Ages 18–39 (Illustrative)",
+    "section": "Covered Indications and Frequency Limitations",
+    "effective_date": "2024-01-01",
+    "edition": "LCD Sample Reference (illustrative; based on CMS LCD policy principles)",
+    "source_url": "https://www.cms.gov/medicare-coverage-database/view/lcd.aspx",
+    "excerpt": "CPT code 99395 (Periodic comprehensive preventive medicine reevaluation and management of an individual, 18–39 years) is covered for established patients presenting for a routine annual preventive examination. Appropriate diagnosis codes include Z00.00 (Encounter for general adult medical examination without abnormal findings) and Z00.01 (Encounter for general adult medical examination with abnormal findings). Coverage is limited to once per calendar year per beneficiary. Services must include a comprehensive history, physical examination, and anticipatory guidance appropriate for the patient's age and risk factors. When Z00.01 is used, documentation must reflect the abnormal finding(s) identified. Additional problem-oriented E/M services on the same date require modifier 25 and a separate problem diagnosis.",
+    "applies_to_codes": ["99395", "Z00.00", "Z00.01"],
+    "notes": "99395 is the preventive visit code for patients aged 18–39. Coverage is conditional on annual frequency and appropriate diagnosis. Modifier 25 rules apply if a problem E/M is also billed. Designed for use with coverage validation agent v1."
   }
 ]

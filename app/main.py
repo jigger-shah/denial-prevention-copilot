@@ -16,6 +16,7 @@ Manual claim transformation lives in app/claim_intake.py (no Streamlit there).
 """
 
 import json
+import os
 import pathlib
 import sys
 
@@ -25,8 +26,12 @@ if str(_ROOT) not in sys.path:
 
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from rules.rule_engine import load_claim, review_claim, overall_risk, CHECKS_RUN
+from agents.coverage_validation import validate_coverage
 from db.audit_repository import AuditDecision, AuditRepository
 from retrieval.policy_repository import get_citation_detail
 from app.claim_intake import (
@@ -41,6 +46,8 @@ from app.claim_intake import (
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+
+_AI_ENABLED: bool = bool(os.getenv("ANTHROPIC_API_KEY"))
 
 CLAIMS_FILE = pathlib.Path(__file__).parent.parent / "data" / "synthetic" / "sample_claims.json"
 MODEL_VERSION = "rule_layer_v0.1"
@@ -272,6 +279,45 @@ def _render_checks_summary(findings: list) -> None:
         st.caption("Checks run: " + " · ".join(CHECKS_RUN))
 
 
+def _render_ai_section(claim, claim_id: str, reviewer_name: str, repo: AuditRepository) -> None:
+    """Render the AI Coverage Analysis button and its findings below rule results."""
+    if not _AI_ENABLED:
+        return
+
+    st.divider()
+    st.subheader("AI Coverage Analysis")
+
+    if not st.session_state.get("ai_reviewed"):
+        st.caption(
+            "Run AI-powered coverage and medical necessity analysis against "
+            "retrieved LCD/NCD policy documents."
+        )
+        if st.button("🤖 Run AI Coverage Analysis", key=f"ai_btn_{claim_id}"):
+            with st.spinner("Querying policy documents and analyzing coverage…"):
+                ai_findings = validate_coverage(claim)
+            st.session_state["ai_findings"] = ai_findings
+            st.session_state["ai_reviewed"] = True
+            st.rerun()
+    else:
+        ai_findings = st.session_state.get("ai_findings", [])
+        if ai_findings:
+            st.caption(f"{len(ai_findings)} finding(s) from AI coverage analysis.")
+            for finding in ai_findings:
+                _finding_card(
+                    finding,
+                    claim_id=claim_id,
+                    reviewer_name=reviewer_name,
+                    repo=repo,
+                )
+        else:
+            st.success("✅ No coverage concerns identified by AI analysis.")
+
+        if st.button("↩ Clear AI Analysis", key=f"ai_clear_{claim_id}"):
+            st.session_state.pop("ai_findings", None)
+            st.session_state.pop("ai_reviewed", None)
+            st.rerun()
+
+
 def _clear_review_state() -> None:
     keys_to_clear = [
         k for k in st.session_state
@@ -279,7 +325,11 @@ def _clear_review_state() -> None:
     ]
     for k in keys_to_clear:
         del st.session_state[k]
-    for key in ("findings", "risk", "reviewed_claim_id", "manual_reviewed", "manual_claim_dict"):
+    for key in (
+        "findings", "risk", "reviewed_claim_id",
+        "manual_reviewed", "manual_claim_dict",
+        "ai_findings", "ai_reviewed",
+    ):
         st.session_state.pop(key, None)
 
 
@@ -531,6 +581,15 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
                     repo=repo,
                 )
 
+        stored_dict = st.session_state.get("manual_claim_dict")
+        if stored_dict:
+            _render_ai_section(
+                claim=load_claim(stored_dict),
+                claim_id=reviewed_id,
+                reviewer_name=reviewer_name,
+                repo=repo,
+            )
+
 
 # ---------------------------------------------------------------------------
 # Sample Claim UI (existing mode, unchanged)
@@ -572,6 +631,7 @@ def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
         st.session_state["findings"] = findings
         st.session_state["risk"] = risk
         st.session_state["reviewed_claim_id"] = claim_dict["claim_id"]
+        st.session_state["sample_claim_dict"] = claim_dict
 
     if (
         "findings" in st.session_state
@@ -593,6 +653,14 @@ def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
                     reviewer_name=reviewer_name,
                     repo=repo,
                 )
+
+        stored_dict = st.session_state.get("sample_claim_dict", claim_dict)
+        _render_ai_section(
+            claim=load_claim(stored_dict),
+            claim_id=stored_dict["claim_id"],
+            reviewer_name=reviewer_name,
+            repo=repo,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -616,6 +684,16 @@ def main() -> None:
             placeholder="Enter your name to save decisions",
         )
         st.caption("Required to save decisions to the audit log.")
+
+        st.divider()
+        st.header("AI Coverage Analysis")
+        if _AI_ENABLED:
+            st.success("✅ AI enabled")
+        else:
+            st.warning(
+                "AI Coverage Analysis disabled. "
+                "Add `ANTHROPIC_API_KEY` to your `.env` file to enable."
+            )
 
     st.title("Denial Prevention Copilot")
     st.caption("AI does the research. Humans make the call.")

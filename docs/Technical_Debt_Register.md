@@ -2,7 +2,7 @@
 ## Denial Prevention Copilot
 
 **Last updated:** June 2026
-**Scope:** All known technical debt as of Sprint 8 (UI/UX hardening — checks-run metadata, button styling, NPI display)
+**Scope:** All known technical debt as of Sprint 9 (Coverage Validation Agent v1 — first LLM integration, JSON-backed retrieval, citation grounding, 14 mocked tests)
 
 Priority definitions:
 - **High** — blocks a P0 PRD requirement, a core demo scenario, or correct audit behavior
@@ -82,49 +82,52 @@ Behavior: empty NPI → no finding (optional field); non-numeric or wrong length
 
 ---
 
-#### TD-04: All LLM Agents Are Docstring-Only Stubs
+#### TD-04: Most LLM Agents Still Stubs (Partially Resolved Sprint 9)
 
-**Description:** `agents/coding_validation.py`, `agents/coverage_validation.py`, `agents/documentation_review.py`, `agents/denial_prevention.py`, and `agents/orchestrator.py` all contain docstrings describing their intended behavior but no implementation.
+**Resolution (Partial):** `agents/coverage_validation.py` is implemented as of Sprint 9. `validate_coverage(claim)` calls Claude via structured tool use, enforces citation grounding, and returns 0 or 1 `Finding` object. 14 mocked tests cover all governance paths. See ADR-012 for design decisions.
 
-**Location:** `agents/` (all files)
+**Remaining:** `agents/coding_validation.py`, `agents/documentation_review.py`, `agents/denial_prevention.py`, and `agents/orchestrator.py` still contain only docstrings.
+
+**Description:** `agents/coding_validation.py`, `agents/documentation_review.py`, `agents/denial_prevention.py`, and `agents/orchestrator.py` all contain docstrings describing their intended behavior but no implementation.
+
+**Location:** `agents/` (all files except coverage_validation.py)
 
 **Impact:**
-- The LLM-powered value proposition of the product cannot be demonstrated.
-- Medical necessity findings (the coverage agent's output, and the most complex reasoning task) do not exist.
 - Documentation review findings do not exist.
-- The PRD's core agentic architecture (§9) is entirely unimplemented.
-- Readiness scores for AI PM interview and Healthcare AI Governance demo are capped by this gap.
+- The full PRD agentic architecture (§9 — four agents in parallel) is not yet assembled.
+- `coding_validation.py` duplicates rule-layer responsibilities (MUE, NCCI via LLM) — lowest priority.
 
 **Recommended Fix:**
-- Phase 5: Implement `coverage_validation.py` first (highest-value, highest-difficulty reasoning task).
 - Phase 6: Implement `documentation_review.py`.
 - Phase 7: Implement `orchestrator.py` and `denial_prevention.py`.
-- All agents must use Anthropic SDK structured tool use with `claude-sonnet-4-6`.
+- All agents must use Anthropic SDK structured tool use with `claude-sonnet-4-6` (or claude-haiku-4-5 for lighter tasks).
 - All agent findings must produce `Finding` objects conforming to the existing schema — no schema changes needed.
 
-**Planned Sprint:** Phases 5–7
+**Planned Sprint:** Phases 6–7
 
 ---
 
-#### TD-05: RAG Retrieval Pipeline Is Not Built
+#### TD-05: ChromaDB RAG Retrieval Pipeline Is Not Built
 
 **Description:** `retrieval/ingest.py`, `retrieval/chunking.py`, and `retrieval/vector_store.py` are all docstring-only stubs. No LCD or NCD documents have been fetched from the CMS Coverage API or indexed in ChromaDB.
 
 **Location:** `retrieval/` (all files)
 
+**Current workaround (Sprint 9):** `agents/coverage_validation.py` v1 retrieves from the JSON policy repository (`retrieval/policy_repository.py`) as a substitute. 3 LCD-style entries added (`LCD_E_M_MEDICAL_NECESSITY_Z00`, `LCD_E_M_MEDICAL_NECESSITY_I10`, `LCD_PREVENTIVE_99395_COVERAGE`). This supports demonstration and testing without ChromaDB, but the policy corpus is curated (8 entries) rather than comprehensive (hundreds of LCDs/NCDs).
+
 **Impact:**
-- The Coverage Validation Agent cannot be implemented without a retrieval pipeline.
-- The "no citation → no finding" rule for coverage findings cannot be enforced (or demonstrated) without retrieved text.
-- Medical necessity findings — the primary differentiator from rule-based scrubbers — do not exist.
-- `data/reference/` is empty of CMS data.
+- Coverage agent can only reason over 3 LCD entries (Z00.00 medical necessity, I10 hypertension, 99395 preventive visit coverage).
+- Claims with codes not covered by the JSON corpus produce no AI findings (by design — correct governance behavior).
+- ChromaDB vector retrieval (semantic search by dx/procedure pair) is not available.
 
 **Recommended Fix:**
 1. Implement `retrieval/ingest.py` to fetch LCDs and NCDs via the CMS MCD API.
 2. Implement `retrieval/chunking.py` with section-aware splitting (keep policy sections intact).
 3. Implement `retrieval/vector_store.py` ChromaDB wrapper with `index()` and `query()`.
-4. Write an ingestion script that populates `data/reference/coverage/` and builds the ChromaDB index at `retrieval/chroma_db/`.
+4. Replace `find_policies_by_codes()` call in `coverage_validation.py` with `vector_store.query()` — only that one call changes.
+5. Write an ingestion script that populates `data/reference/coverage/` and builds the ChromaDB index.
 
-**Planned Sprint:** Phase 4 — LCD/NCD Retrieval Pipeline
+**Planned Sprint:** Phase 4 — LCD/NCD Retrieval Pipeline (prerequisite for coverage agent v2)
 
 ---
 
@@ -262,28 +265,13 @@ Add boundary validation in `load_claim()` for format checks (5-digit CPT, ICD-10
 
 ---
 
-#### TD-12: No `.env` Guard or `ANTHROPIC_API_KEY` Check at Startup
+#### TD-12: `ANTHROPIC_API_KEY` Guard (Partially Resolved Sprint 9)
 
-**Description:** The app starts without checking whether `ANTHROPIC_API_KEY` is set. When the agent layer is wired, missing the API key will produce a confusing error deep in the Anthropic SDK rather than a clear startup message.
+**Resolution (Partial):** Sprint 9 added `load_dotenv()` at startup in `app/main.py`, the `_AI_ENABLED = bool(os.getenv("ANTHROPIC_API_KEY"))` flag computed at import time, and a sidebar warning ("AI Coverage Analysis disabled. Add `ANTHROPIC_API_KEY` to your `.env` file to enable.") when the key is absent. Coverage agent calls are gated on `_AI_ENABLED` — no SDK call is made if the key is missing. `.env.example` added to the repository with setup instructions.
 
-**Location:** `app/main.py` (top-level startup)
+**Remaining:** The sidebar warning is informational, not blocking. A user who has the key but has it set incorrectly (wrong format, revoked) will get a runtime error from the SDK when the AI button is clicked rather than a startup guard. Adding a key format validation at startup (`api_key.startswith("sk-ant-")`) would improve UX for this case.
 
-**Impact:**
-- Currently low risk (agents not wired).
-- Will produce a runtime error mid-demo the moment any agent is called without the key set.
-
-**Recommended Fix:**
-```python
-import os
-from dotenv import load_dotenv
-load_dotenv()
-if not os.getenv("ANTHROPIC_API_KEY"):
-    st.error("ANTHROPIC_API_KEY not set. Add it to .env before running agents.")
-    st.stop()
-```
-Add this check gated on whether agents are enabled, so it does not block the current demo.
-
-**Planned Sprint:** Phase 5 (before wiring the first agent)
+**Planned Sprint:** Resolved for the no-key case; SDK-level key validation optional in a future sprint.
 
 ---
 
