@@ -446,3 +446,106 @@ def test_existing_mocked_anthropic_flow_unaffected_by_vector_swap(mock_anthropic
 
     assert len(findings) == 1
     assert findings[0].citation.doc_id == "LCD_E_M_MEDICAL_NECESSITY_Z00"
+
+
+# ---------------------------------------------------------------------------
+# Excerpt quality fix: dangling-fragment cleanup and fallback to chunk text
+# ---------------------------------------------------------------------------
+
+def test_clean_citation_excerpt_keeps_clean_model_excerpt_unchanged():
+    from agents.coverage_validation import _clean_citation_excerpt
+
+    result = _clean_citation_excerpt(
+        "Problem-oriented E/M services billed with Z00.00 require modifier 25.",
+        fallback_chunk_text="irrelevant fallback text.",
+    )
+    assert result == "Problem-oriented E/M services billed with Z00.00 require modifier 25."
+
+
+def test_clean_citation_excerpt_falls_back_when_model_excerpt_starts_with_dangling_paren():
+    from agents.coverage_validation import _clean_citation_excerpt
+
+    result = _clean_citation_excerpt(
+        "). This NCD lists the ICD-10 codes for HbA1c for frequencies up to once every 3 months.",
+        fallback_chunk_text="HbA1c testing is reasonable and necessary for stable glycemic control patients.",
+    )
+    assert result == "HbA1c testing is reasonable and necessary for stable glycemic control patients."
+    assert not result.startswith(")")
+
+
+def test_clean_citation_excerpt_falls_back_when_model_excerpt_is_empty():
+    from agents.coverage_validation import _clean_citation_excerpt
+
+    result = _clean_citation_excerpt("", fallback_chunk_text="Clean fallback sentence.")
+    assert result == "Clean fallback sentence."
+
+
+def test_clean_citation_excerpt_returns_dangling_text_if_no_fallback_available():
+    """With no fallback at all, return whatever the model gave rather than an empty string."""
+    from agents.coverage_validation import _clean_citation_excerpt
+
+    result = _clean_citation_excerpt(") dangling model text.", fallback_chunk_text="")
+    assert result == ") dangling model text."
+
+
+@patch("agents.coverage_validation.anthropic.Anthropic")
+def test_vector_citation_excerpt_does_not_begin_with_dangling_paren(mock_anthropic, mock_vector_store, monkeypatch):
+    """
+    Regression test for the production bug: the model echoes a vector chunk that
+    happened to start right after a closing paren ("). This NCD lists..."). The
+    finding's citation.excerpt must not surface that fragment verbatim.
+    """
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    mock_vector_store.count.return_value = 1
+    mock_vector_store.query.return_value = [_vector_chunk(
+        "33431",
+        "). This NCD lists the ICD-10 codes for HbA1c for frequencies up to once every 3 months.",
+        document_title="HbA1c",
+    )]
+
+    tool_block = _tool_use_block("report_coverage_finding", {
+        "issue": "HbA1c lacks medical necessity diagnosis",
+        "recommendation": "Add a diabetes diagnosis code.",
+        "severity": "HIGH",
+        "confidence": 0.9,
+        "citation_doc_id": "33431",
+        "citation_section": "Coverage Indications, Limitations, and/or Medical Necessity",
+        "citation_excerpt": "). This NCD lists the ICD-10 codes for HbA1c for frequencies up to once every 3 months.",
+    })
+    mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
+
+    findings = validate_coverage(_claim(cpt_codes=["83036"], icd10_codes=["Z00.00"]))
+
+    assert len(findings) == 1
+    excerpt = findings[0].citation.excerpt
+    assert not excerpt.startswith(")")
+    assert not excerpt.startswith(".")
+    assert excerpt == "This NCD lists the ICD-10 codes for HbA1c for frequencies up to once every 3 months."
+
+
+@patch("agents.coverage_validation.anthropic.Anthropic")
+def test_vector_citation_grounding_still_passes_with_clean_excerpt(mock_anthropic, mock_vector_store, monkeypatch):
+    """The excerpt cleanup must not interfere with citation grounding — doc_id matching is unaffected."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    mock_vector_store.count.return_value = 1
+    mock_vector_store.query.return_value = [_vector_chunk(
+        "33431", "HbA1c testing is reasonable and necessary for stable glycemic control.",
+        document_title="HbA1c",
+    )]
+
+    tool_block = _tool_use_block("report_coverage_finding", {
+        "issue": "Medical necessity concern",
+        "recommendation": "Review documentation.",
+        "severity": "MEDIUM",
+        "confidence": 0.8,
+        "citation_doc_id": "33431",
+        "citation_section": "Coverage Indications, Limitations, and/or Medical Necessity",
+        "citation_excerpt": "HbA1c testing is reasonable and necessary for stable glycemic control.",
+    })
+    mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
+
+    findings = validate_coverage(_claim(cpt_codes=["83036"], icd10_codes=["Z00.00"]))
+
+    assert len(findings) == 1
+    assert findings[0].citation.doc_id == "33431"
+    assert findings[0].citation.excerpt == "HbA1c testing is reasonable and necessary for stable glycemic control."

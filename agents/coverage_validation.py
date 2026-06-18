@@ -33,10 +33,12 @@ import hashlib
 import logging
 import os
 import pathlib
+import re
 
 import anthropic
 from dotenv import load_dotenv
 
+from retrieval.chunking import starts_with_dangling_fragment, trim_leading_fragment
 from retrieval.policy_repository import find_policies_by_codes
 from retrieval.vector_store import VectorStore
 from rules.models import Citation, ClaimIn, Finding
@@ -48,6 +50,8 @@ logger = logging.getLogger(__name__)
 _DEFAULT_MODEL = "claude-haiku-4-5"
 _LCD_SOURCE_TYPES = {"LCD", "NCD"}
 _MAX_POLICIES = 3
+_EXCERPT_SNIPPET_MAX_CHARS = 400
+_SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s")
 _CHROMA_DIR = pathlib.Path(__file__).parent.parent / "retrieval" / "chroma_db"
 
 _vector_store_instance: VectorStore | None = None
@@ -247,6 +251,43 @@ def _retrieve_policies(claim: ClaimIn) -> list[dict]:
     return _retrieve_from_json_fallback(claim)
 
 
+def _sentence_snippet(text: str, max_chars: int = _EXCERPT_SNIPPET_MAX_CHARS) -> str:
+    """
+    Trim a retrieved policy's chunk text to a clean, sentence-bounded snippet
+    suitable for display as a citation excerpt — used as the fallback when the
+    model's own citation_excerpt looks like a fragment (see _clean_citation_excerpt).
+    """
+    cleaned = trim_leading_fragment(text.strip())
+    if len(cleaned) <= max_chars:
+        return cleaned
+
+    truncated = cleaned[:max_chars]
+    last_boundary = None
+    for match in _SENTENCE_BOUNDARY.finditer(truncated):
+        last_boundary = match.start()
+    if last_boundary:
+        return truncated[:last_boundary + 1].strip()
+    return truncated.rstrip() + "…"
+
+
+def _clean_citation_excerpt(model_excerpt: str, fallback_chunk_text: str) -> str:
+    """
+    Use the model's citation_excerpt if it reads as clean, complete text.
+
+    If it's empty or starts with dangling closing punctuation/quotes (a sign
+    the model echoed a mid-sentence chunk boundary, or otherwise produced a
+    fragment), fall back to a cleaned, sentence-bounded snippet of the actual
+    retrieved policy text it was grounded in — never raw, unfiltered model output
+    in that case, and never an empty excerpt when a retrieved chunk is available.
+    """
+    candidate = (model_excerpt or "").strip()
+    if candidate and not starts_with_dangling_fragment(candidate):
+        return candidate
+    if fallback_chunk_text:
+        return _sentence_snippet(fallback_chunk_text)
+    return candidate
+
+
 def _build_user_message(claim: ClaimIn, lcd_policies: list[dict]) -> str:
     cpt = ", ".join(claim.cpt_codes) if claim.cpt_codes else "none"
     icd = ", ".join(claim.icd10_codes) if claim.icd10_codes else "none"
@@ -313,7 +354,7 @@ def _parse_response(
                 section=args.get("citation_section", policy.get("section", "")),
                 edition=policy.get("edition", ""),
                 effective_date=policy.get("effective_date"),
-                excerpt=args.get("citation_excerpt", ""),
+                excerpt=_clean_citation_excerpt(args.get("citation_excerpt", ""), policy.get("excerpt", "")),
             )
 
             severity = args.get("severity", "MEDIUM")
