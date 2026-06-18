@@ -332,6 +332,20 @@ The six validated demo scenarios (each tested in `tests/test_policy_repository.p
 
 Two-tool schema: `report_coverage_finding` (issue, recommendation, severity, confidence, citation fields) and `no_coverage_concern` (reason). UI: "🤖 Run AI Coverage Analysis" button appears after rule review when `ANTHROPIC_API_KEY` is set. Sidebar shows AI enabled/disabled status. AI findings use the same `_finding_card` component and the same audit trail as rule findings.
 
+**Production validation results (2026-06-18):**
+
+| Metric | Result |
+|---|---|
+| Status | Production Validated |
+| Model | `claude-sonnet-4-5-20250929` |
+| Demo scenario | Labs + well-visit dx (CPT 80053 + 83036, ICD-10 Z00.00) |
+| Policies retrieved | 7 |
+| Policies sent to model | 3 (capped by `_MAX_POLICIES`) |
+| Finding generated | Yes — HIGH severity |
+| Citation grounding | Passed (`LCD_E_M_MEDICAL_NECESSITY_Z00` in retrieved set) |
+| End-to-end latency | 7.27s |
+| Errors | None |
+
 ### Feature 11: Test Suite
 
 | Attribute | Value |

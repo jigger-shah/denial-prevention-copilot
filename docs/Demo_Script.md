@@ -149,6 +149,19 @@
 
 > "Without an API key, the AI section shows 'AI Coverage Analysis disabled' in the sidebar — the rest of the app runs exactly the same. The architecture is designed so AI is additive: the rule layer provides the deterministic foundation, and the AI layer adds coverage reasoning where the policies are nuanced. Removing the AI key degrades to a rules-only mode, not a broken state."
 
+**Live validation results (2026-06-18):**
+
+| Metric | Result |
+|---|---|
+| Model | `claude-sonnet-4-5-20250929` |
+| Scenario | Labs + Z00.00 (CPT 80053 + 83036, ICD-10 Z00.00) |
+| Policies retrieved | 7 |
+| Policies sent to model | 3 |
+| Finding generated | Yes — HIGH severity |
+| Citation grounding | Passed |
+| Latency | 7.27s |
+| Status | Production Validated |
+
 ---
 
 ### Step 2.5 Extended: Coverage Policy Demo Scenarios
