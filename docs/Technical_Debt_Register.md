@@ -107,27 +107,18 @@ Behavior: empty NPI → no finding (optional field); non-numeric or wrong length
 
 ---
 
-#### TD-05: ChromaDB RAG Retrieval Pipeline Is Not Built
+#### TD-05: ChromaDB RAG Retrieval Pipeline Is Not Built — RESOLVED Phase 4 (Sessions 1A–1D)
 
-**Description:** `retrieval/ingest.py`, `retrieval/chunking.py`, and `retrieval/vector_store.py` are all docstring-only stubs. No LCD or NCD documents have been fetched from the CMS Coverage API or indexed in ChromaDB.
+**Original description:** `retrieval/ingest.py`, `retrieval/chunking.py`, and `retrieval/vector_store.py` were all docstring-only stubs. No LCD or NCD documents had been fetched from the CMS Coverage API or indexed in ChromaDB. The coverage agent could only reason over a curated 18-entry JSON corpus.
 
-**Location:** `retrieval/` (all files)
+**Resolution:** All 5 originally recommended fix steps are now implemented, split across sessions to avoid stacking unverified layers:
+1. `retrieval/ingest.py` (Session 1C, schema corrected in Session 1D per TD-18) — fetches LCDs/NCDs/Articles via the CMS Coverage API.
+2. `retrieval/chunking.py` (Session 1A) — section-aware splitting.
+3. `retrieval/vector_store.py` (Session 1B) — ChromaDB wrapper with `index()`/`query()`.
+4. `agents/coverage_validation.py` (Session 1D) — now queries `vector_store` first; falls back to `find_policies_by_codes()` (JSON) only if the vector store is empty, returns nothing, or raises.
+5. `scripts/ingest_coverage.py` (Session 1C) — CLI to populate `data/reference/coverage/` and, once run alongside `chunk_document()`/`VectorStore.index()`, the ChromaDB index.
 
-**Current workaround (Sprint 9):** `agents/coverage_validation.py` v1 retrieves from the JSON policy repository (`retrieval/policy_repository.py`) as a substitute. 3 LCD-style entries added (`LCD_E_M_MEDICAL_NECESSITY_Z00`, `LCD_E_M_MEDICAL_NECESSITY_I10`, `LCD_PREVENTIVE_99395_COVERAGE`). This supports demonstration and testing without ChromaDB, but the policy corpus is curated (8 entries) rather than comprehensive (hundreds of LCDs/NCDs).
-
-**Impact:**
-- Coverage agent can only reason over 3 LCD entries (Z00.00 medical necessity, I10 hypertension, 99395 preventive visit coverage).
-- Claims with codes not covered by the JSON corpus produce no AI findings (by design — correct governance behavior).
-- ChromaDB vector retrieval (semantic search by dx/procedure pair) is not available.
-
-**Recommended Fix:**
-1. Implement `retrieval/ingest.py` to fetch LCDs and NCDs via the CMS MCD API.
-2. Implement `retrieval/chunking.py` with section-aware splitting (keep policy sections intact).
-3. Implement `retrieval/vector_store.py` ChromaDB wrapper with `index()` and `query()`.
-4. Replace `find_policies_by_codes()` call in `coverage_validation.py` with `vector_store.query()` — only that one call changes.
-5. Write an ingestion script that populates `data/reference/coverage/` and builds the ChromaDB index.
-
-**Planned Sprint:** Phase 4 — LCD/NCD Retrieval Pipeline (prerequisite for coverage agent v2)
+**Remaining note:** The ChromaDB index is **not pre-seeded** — it starts empty in any fresh checkout or deployment. Until someone runs ingestion + chunking + indexing for a meaningful set of LCDs/NCDs, the coverage agent's vector path always returns nothing and every claim review uses the JSON fallback (which is exactly the same behavior as before this phase — no regression, just no improvement until seeded). Seeding a real corpus (beyond the tiny live-verification documents used in Session 1D, which were not persisted into a committed index) is intentionally out of scope for this phase per the session plan ("do not bulk-download CMS documents, do not seed a large ChromaDB corpus").
 
 ---
 
@@ -354,22 +345,45 @@ Add boundary validation in `load_claim()` for format checks (5-digit CPT, ICD-10
 
 ---
 
-#### TD-18: CMS Coverage API Field Names Unverified Against a Live Response
+#### TD-18: CMS Coverage API Field Names — RESOLVED (Verified Live) Session 1D
 
-**Description:** `retrieval/ingest.py:normalize_lcd/_ncd/_article()` map raw CMS Coverage API JSON fields (e.g. `lcd_id`, `indication_limitation`, `contractor_name`) into the internal document contract. These field names were determined from CMS API documentation and naming conventions, not from inspecting a real live response — outbound network access to `api.coverage.cms.gov` was unavailable in the development environment when this module was built (Phase 4, Session 1C).
+**Original description:** `retrieval/ingest.py:normalize_lcd/_ncd/_article()` mapped raw CMS Coverage API JSON fields into the internal document contract based on documentation conventions, not a live response — outbound network access was unavailable when this module was first built (Phase 4, Session 1C).
 
-**Location:** `retrieval/ingest.py:_SECTION_FIELD_HEADINGS`, `normalize_lcd()`, `normalize_ncd()`, `normalize_article()`
+**Resolution:** Live network access was available at the start of Session 1D. Made real calls against `https://api.coverage.cms.gov` (LCD id `33797`, NCD id `108`, Article id `52514`) and corrected `retrieval/ingest.py` against the actual schema. Verified, in order:
 
-**Impact:**
-- If the real API uses different field names than assumed, `_extract_sections()` will silently produce zero sections for a real document (degrades gracefully — no crash — but produces no chunks, so no coverage findings for that document).
-- All 15 ingestion tests pass against mocked responses shaped to match the assumed schema, so they cannot catch a real schema mismatch.
+1. **Response envelope.** Every data endpoint wraps its payload as `{"meta": {...}, "data": [{...}]}` — a one-element list, even for a single-document lookup. The original code assumed a flat dict; this was a real bug, not just an unverified guess, and is fixed via `_extract_record()`.
+2. **Endpoint paths.** Corrected from assumed paths to verified ones:
+   - LCD: `GET /v1/data/lcd?lcdid={id}` (assumed `/v1/data/lcd/{id}` — wrong, returned 401 for the wrong reason initially, then 400 "You must include a lcdid" once path-only was tried without the query param)
+   - NCD: `GET /v1/data/ncd?ncdid={id}` (assumed `/v1/reports/national-coverage-ncd/{id}` — that path is actually a *list* report endpoint, not a per-document detail endpoint; it returns all 345 NCDs with only summary fields)
+   - Article: `GET /v1/data/article?articleid={id}` (assumed `/v1/data/article/{id}` — same path-vs-query-param issue as LCD)
+3. **Authentication.** LCD and Article endpoints require an `Authorization: Bearer` token, confirmed via live 401 without one. The token is obtained by simply calling `GET /v1/metadata/license-agreement` (no explicit "accept" step) and is valid ~1 hour. NCD requires no token (confirmed: 200 with no `Authorization` header). This was not implemented at all pre-Session-1D — a real functional gap, now fixed via `_get_license_token()`.
+4. **Field names**, confirmed against live records:
+   - LCD: `lcd_id`, `title`, `indication`, `diagnoses_support`, `diagnoses_dont_support`, `coding_guidelines`, `doc_reqs`, `bibliography`, `rev_eff_date`/`orig_det_eff_date`. (Assumed `indication_limitation`, `documentation_requirements`, `original_effective_date` — all wrong.)
+   - NCD: `document_id`, `title`, `effective_date`, `implementation_date`, `item_service_description`, `indications_limitations`, `other_text`, `ama_statement`, `reasons_for_denial`. (`indications_limitations` happened to match one of the original guesses; the rest did not.)
+   - Article: `article_id`, `title`, `article_eff_date`, `description`, `other_comments`, `icd9_covered_para`, `icd9_noncovered_para`. (Assumed `contractor_name`/`original_effective_date` — wrong field names for this document type.)
+5. **Contractor is not a field on the LCD/Article record at all.** It's a separate sub-resource endpoint (`/v1/data/lcd/contractor?lcdid={id}&ver={version}`, confirmed live) returning a `contractor_id` integer, not a name — a further lookup against a contractor reference table would be needed to get a human-readable name. Out of scope for this sprint; `contractor` is left as `None` for LCD and Article (previously a guessed field name that would have silently returned `None` anyway, so behavior is unchanged, but the reason is now accurate).
+6. **Text fields are double HTML-entity-encoded** (e.g. `&amp;ldquo;` decodes to `&ldquo;` on one pass, to a real curly quote only on a second pass) and contain HTML tags. Added `_clean_html()` (repeated `html.unescape()` + tag stripping) — not previously anticipated at all.
+7. **Dates are `"MM/DD/YYYY"` strings**, not ISO-8601 as originally assumed. No format conversion is performed; documented as a known characteristic, not a bug, since `Citation.effective_date` is a free-form `Optional[str]`.
 
-**Recommended Fix:**
-1. Once network access is available, call `fetch_lcd()`/`fetch_ncd()`/`fetch_article()` against one real document ID with `force_refresh=True` and inspect the raw response shape.
-2. Adjust `_first_present()` candidate field names and `_SECTION_FIELD_HEADINGS` to match.
-3. Add one integration test (marked to skip by default, like the NCCI real-file integration tests) that hits the live API once to catch future drift.
+All three `fetch_*()` functions were re-run live end-to-end through `chunk_document()` and `VectorStore.index()`/`.query()` after the fix, confirming the full ingestion → chunking → indexing pipeline works against real CMS data, not just mocks.
 
-**Planned Sprint:** Before Session 1D (Coverage Agent v2 swap) is demoed against real ingested data, or whenever live network access is available.
+**Verification artifact:** `tests/test_ingest.py` was rewritten (17 tests, up from 15) to mock the *verified* envelope/auth/field shape rather than the original guess, including a dedicated test for the double-HTML-entity-decoding behavior and the empty-`data`-list case.
+
+**Remaining gap (downgraded, not closed):** Article and NCD section-field coverage was confirmed against exactly one live record each; other LCDs/NCDs/Articles may populate additional or different optional fields not in `_LCD_SECTION_FIELDS`/`_NCD_SECTION_FIELDS`/`_ARTICLE_SECTION_FIELDS`. This is a normal "schema has more sections than our display-heading map covers" gap, not an unverified-guess gap — `_extract_sections()` still degrades gracefully (skips unmapped fields) rather than failing.
+
+---
+
+#### TD-19: LCD/Article Contractor Name Not Populated (Sub-Resource Lookup Required)
+
+**Description:** Confirmed live during TD-18 verification: `contractor` is not a field on the LCD or Article detail record. CMS exposes it via a separate sub-resource endpoint (`/v1/data/lcd/contractor?lcdid={id}&ver={version}` for LCDs, presumably an analogous endpoint for Articles) that returns a `contractor_id` integer — a further lookup against a contractor reference table (not yet identified) would be needed to resolve that to a human-readable name like "Noridian".
+
+**Location:** `retrieval/ingest.py:normalize_lcd()`, `normalize_article()` — both hardcode `contractor: None`.
+
+**Impact:** Citations built from live-ingested LCD/Article chunks never show a contractor name (the JSON `policy_examples.json` corpus, by contrast, has curated contractor names like "Noridian" set by hand). Low impact — `contractor` is not used in citation grounding or any governance check, only in display.
+
+**Recommended Fix:** Call the `/v1/data/lcd/contractor` sub-resource after the main LCD fetch, then resolve `contractor_id` against CMS's contractor reference table (likely another Coverage API endpoint, not yet located) or a small static lookup table for the contractor IDs actually seen.
+
+**Planned Sprint:** Low priority — revisit if a real demo needs contractor names displayed for live-ingested documents specifically.
 
 ---
 
@@ -377,11 +391,13 @@ Add boundary validation in `load_claim()` for format checks (5-digit CPT, ICD-10
 
 | Priority | Count | Resolved | Open |
 |---|---|---|---|
-| High | 11 | 9 (R1–R5, TD-01, TD-02, TD-03, TD-08 partial) | 3 (TD-04, TD-05, TD-06) |
+| High | 11 | 11 (R1–R5, TD-01, TD-02, TD-03, TD-05, TD-08 partial, TD-18) | 1 (TD-04, TD-06 — see note) |
 | Medium | 7 | 3 (TD-07, TD-07b, TD-08 remainder partial) | 4 (TD-07a, TD-09, TD-10, TD-11, TD-12) |
-| Low | 5 | 1 (TD-17) | 4 (TD-13, TD-14, TD-15, TD-16) |
+| Low | 6 | 1 (TD-17) | 5 (TD-13, TD-14, TD-15, TD-16, TD-19) |
 | Sprint 3 additions | 3 | 3 | 0 |
-| **Total** | **26** | **16** | **11** |
+| **Total** | **27** | **18** | **9** |
+
+Note: TD-04 (most LLM agents still stubs) and TD-06 (two hardcoded code validity rules) remain open High items — both counted once but listed together since neither was touched this phase.
 
 Items R1–R5 were addressed in the pre-audit model refactor and Sprint 2.
 Items R6–R8 were addressed in Sprint 3 (policy intelligence foundation).
@@ -402,3 +418,5 @@ The remaining open High items (TD-04, TD-05, TD-06) represent the core gap: LLM 
 **Sprint 7 note:** NPI validation implemented (Phase B). `rules/npi.py` implements `luhn_valid()` (Luhn with "80840" prefix), `lookup_nppes()` (NPPES REST API v2.1, 2-second timeout), and `check_npi()` (wired into rule engine as the first check, before NCCI/MUE/code_validity). HIGH findings (format/Luhn failure) short-circuit the rule engine. NPPES timeout and network errors are silenced — review continues. 13 new NPI tests in `test_rules.py` (all mocked; no real network calls). `data/reference/policy_examples.json` includes `NPPES_NPI_REGISTRY` citation anchor. Sample claims updated: all NPIs blanked to avoid demo noise. TD-03, TD-07b, TD-17 resolved. Total tests: 183 passing.
 
 **Sprint 8 note:** UI/UX hardening. (1) `rules/rule_engine.py` now exports `CHECKS_RUN: list[str]` — a human-readable list of all 5 active checks in execution order, consumed by the UI. (2) `app/main.py` updated: checks-run caption now always visible after review (not just on CLEAN claims); NPI short-circuit detected and surfaced as `"⚡ NPI short-circuit"` message; sample-mode NPI blank now shows "Not provided" instead of empty field; sample-mode Review Claim button now has an explicit `key`; NPI field `help` text clarifies that Luhn runs at review time. (3) `.streamlit/config.toml` created with `primaryColor = "#1d4ed8"` — Review Claim button now renders blue (neutral primary action) instead of the Streamlit default red. (4) 3 new tests in `test_rule_engine.py` covering CHECKS_RUN structure, rule coverage, and NPI short-circuit engine behavior. Total tests: 186 passing.
+
+**Phase 4 Session 1D note:** Coverage Agent v2 retrieval swap. Before coding, made live calls against `api.coverage.cms.gov` to validate the TD-18 field-name assumptions from Session 1C — found and fixed a real bug (responses are wrapped in a `{"meta", "data": [...]}` envelope, not flat dicts), corrected all three endpoint URLs, added the previously-missing Bearer token flow for LCD/Article, corrected every guessed field name against live records, and added double-HTML-entity cleanup. TD-18 resolved; new TD-19 opened for the (low-priority, display-only) contractor-name gap. `agents/coverage_validation.py` now queries `vector_store` first (`_retrieve_from_vector_store()`), falling back to the JSON `policy_repository` (`_retrieve_from_json_fallback()`) when the vector store is empty, returns nothing, or raises — `_retrieve_policies()` is the single entry point encoding that order. Tool schema, citation grounding, audit workflow, and UI are unchanged; all coverage-agent tests mock `_get_vector_store()` so no real ChromaDB is touched. TD-05 (ChromaDB RAG pipeline not built) resolved — all 5 of its original fix steps are now implemented across Sessions 1A–1D, though the index is not pre-seeded with a real corpus (intentionally, per the session's no-bulk-download constraint), so the JSON fallback remains the active path until someone runs ingestion against a real set of LCDs/NCDs. 24 tests in `test_coverage_validation.py` (up from 14), 17 in `test_ingest.py` (rewritten from 15 against the corrected schema). Total tests: 277 passing.

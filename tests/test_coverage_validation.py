@@ -4,6 +4,13 @@ Tests for agents/coverage_validation.py — all model calls are mocked.
 No real Anthropic API calls are made. The mock replaces
 `agents.coverage_validation.anthropic.Anthropic` so the client
 is never actually instantiated.
+
+No real ChromaDB index is used either. `mock_vector_store` (autouse) patches
+`agents.coverage_validation._get_vector_store` with a MagicMock whose
+`count()` defaults to 0 — every test in this file therefore exercises the
+JSON policy_repository fallback path by default, exactly as in v1, unless a
+test explicitly configures the mock's `count`/`query` to simulate vector
+results (see the "Session 1D" tests below).
 """
 
 import hashlib
@@ -19,6 +26,15 @@ from rules.models import ClaimIn
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def mock_vector_store(monkeypatch):
+    """Default: empty vector store, so every test falls back to JSON unless it opts in to vector results."""
+    store = MagicMock()
+    store.count.return_value = 0
+    monkeypatch.setattr("agents.coverage_validation._get_vector_store", lambda: store)
+    return store
+
 
 def _claim(
     cpt_codes=None,
@@ -38,6 +54,19 @@ def _claim(
         note_text="",
         description="",
     )
+
+
+def _vector_chunk(document_id, text, section_heading="Indications", document_title="Test Policy",
+                   effective_date="2026-01-01", chunk_index=0, distance=0.3):
+    return {
+        "document_id": document_id,
+        "document_title": document_title,
+        "section_heading": section_heading,
+        "effective_date": effective_date,
+        "chunk_index": chunk_index,
+        "text": text,
+        "distance": distance,
+    }
 
 
 def _tool_use_block(name: str, input_dict: dict):
@@ -254,3 +283,166 @@ def test_stable_finding_id_differs_by_claim():
     a = _stable_finding_id("CLM-001", "LCD_TEST", "issue")
     b = _stable_finding_id("CLM-002", "LCD_TEST", "issue")
     assert a != b
+
+
+# ---------------------------------------------------------------------------
+# Session 1D: vector retrieval + JSON fallback
+# ---------------------------------------------------------------------------
+
+@patch("agents.coverage_validation.anthropic.Anthropic")
+def test_vector_store_queried_when_it_has_results(mock_anthropic, mock_vector_store, monkeypatch):
+    """When the vector store has chunks, query() is called and its results are used (not the JSON corpus)."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    mock_vector_store.count.return_value = 5
+    mock_vector_store.query.return_value = [
+        _vector_chunk("LCD_VECTOR_001", "Coverage applies when medically necessary.")
+    ]
+
+    tool_block = _tool_use_block("report_coverage_finding", {
+        "issue": "Medical necessity concern",
+        "recommendation": "Document medical necessity.",
+        "severity": "MEDIUM",
+        "confidence": 0.8,
+        "citation_doc_id": "LCD_VECTOR_001",
+        "citation_section": "Indications",
+        "citation_excerpt": "Coverage applies when medically necessary.",
+    })
+    mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
+
+    findings = validate_coverage(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+
+    mock_vector_store.query.assert_called_once()
+    assert len(findings) == 1
+    assert findings[0].citation.doc_id == "LCD_VECTOR_001"
+
+
+def test_vector_results_convert_to_policy_like_objects(mock_vector_store):
+    """_vector_result_to_policy() maps chunk fields onto the keys _build_user_message() reads."""
+    from agents.coverage_validation import _vector_result_to_policy
+
+    chunk = _vector_chunk(
+        "LCD_VECTOR_002", "Some excerpt text.",
+        section_heading="Documentation Requirements",
+        document_title="LCD L12345 — Test Policy",
+        effective_date="2025-07-01",
+    )
+    policy = _vector_result_to_policy(chunk)
+
+    assert policy == {
+        "document_id": "LCD_VECTOR_002",
+        "title": "LCD L12345 — Test Policy",
+        "section": "Documentation Requirements",
+        "effective_date": "2025-07-01",
+        "edition": "",
+        "excerpt": "Some excerpt text.",
+    }
+
+
+@patch("agents.coverage_validation.anthropic.Anthropic")
+def test_citation_grounding_works_with_vector_result_document_id(mock_anthropic, mock_vector_store, monkeypatch):
+    """Citation grounding (doc_id must be in the retrieved set) applies identically to vector-sourced policies."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    mock_vector_store.count.return_value = 2
+    mock_vector_store.query.return_value = [_vector_chunk("LCD_VECTOR_003", "Real retrieved text.")]
+
+    tool_block = _tool_use_block("report_coverage_finding", {
+        "issue": "Hallucinated concern",
+        "recommendation": "Fix it.",
+        "severity": "HIGH",
+        "confidence": 0.9,
+        "citation_doc_id": "LCD_NOT_RETRIEVED",  # not in the vector result set
+        "citation_section": "Section X",
+        "citation_excerpt": "hallucinated text",
+    })
+    mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
+
+    findings = validate_coverage(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+    assert findings == []  # suppressed: ungrounded doc_id, even though the source was the vector store
+
+
+def test_json_fallback_used_when_vector_store_returns_empty_list(mock_vector_store):
+    """vector_store.count() > 0 but query() returns [] (e.g. no chunk relevant to this claim) -> JSON fallback."""
+    from agents.coverage_validation import _retrieve_policies
+
+    mock_vector_store.count.return_value = 5
+    mock_vector_store.query.return_value = []
+
+    policies = _retrieve_policies(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+
+    mock_vector_store.query.assert_called_once()
+    assert policies  # JSON corpus has a match for Z00.00
+    assert all(p["document_id"] != "" for p in policies)
+
+
+def test_json_fallback_used_when_vector_store_count_is_zero(mock_vector_store):
+    """Default fixture state: count()==0 short-circuits before query() is even called."""
+    from agents.coverage_validation import _retrieve_policies
+
+    policies = _retrieve_policies(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+
+    mock_vector_store.query.assert_not_called()
+    assert policies  # JSON corpus has a match for Z00.00
+
+
+def test_json_fallback_used_when_vector_store_raises(mock_vector_store):
+    """vector_store.query() raising (e.g. ChromaDB unavailable) falls back to JSON, never propagates."""
+    from agents.coverage_validation import _retrieve_policies
+
+    mock_vector_store.count.return_value = 5
+    mock_vector_store.query.side_effect = RuntimeError("ChromaDB connection lost")
+
+    policies = _retrieve_policies(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+
+    assert policies  # JSON corpus has a match for Z00.00
+
+
+def test_no_policy_from_vector_or_json_returns_empty_list(mock_vector_store):
+    """Neither source has anything for these codes -> []."""
+    from agents.coverage_validation import _retrieve_policies
+
+    mock_vector_store.count.return_value = 5
+    mock_vector_store.query.return_value = []
+
+    policies = _retrieve_policies(_claim(cpt_codes=["ZZZZ99"], icd10_codes=["Q00.0"]))
+    assert policies == []
+
+
+def test_validate_coverage_returns_empty_when_neither_source_has_policies(monkeypatch, mock_vector_store):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    mock_vector_store.count.return_value = 5
+    mock_vector_store.query.return_value = []
+
+    findings = validate_coverage(_claim(cpt_codes=["ZZZZ99"], icd10_codes=["Q00.0"]))
+    assert findings == []
+
+
+def test_vector_store_not_queried_when_claim_has_no_codes(mock_vector_store, monkeypatch):
+    """Empty query text short-circuits before touching the vector store at all."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    from agents.coverage_validation import _retrieve_from_vector_store
+
+    result = _retrieve_from_vector_store(_claim())
+    mock_vector_store.count.assert_not_called()
+    assert result == []
+
+
+@patch("agents.coverage_validation.anthropic.Anthropic")
+def test_existing_mocked_anthropic_flow_unaffected_by_vector_swap(mock_anthropic, monkeypatch, mock_vector_store):
+    """Sanity check: with the vector store empty (default), v1 behavior is bit-for-bit preserved."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    tool_block = _tool_use_block("report_coverage_finding", {
+        "issue": "E/M billed with preventive diagnosis only",
+        "recommendation": "Add modifier 25 and a separate problem diagnosis.",
+        "severity": "MEDIUM",
+        "confidence": 0.85,
+        "citation_doc_id": "LCD_E_M_MEDICAL_NECESSITY_Z00",
+        "citation_section": "Indications and Limitations of Coverage and/or Medical Necessity",
+        "citation_excerpt": "Problem-oriented E/M services billed with Z00.00 require modifier 25.",
+    })
+    mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
+
+    findings = validate_coverage(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+
+    assert len(findings) == 1
+    assert findings[0].citation.doc_id == "LCD_E_M_MEDICAL_NECESSITY_Z00"

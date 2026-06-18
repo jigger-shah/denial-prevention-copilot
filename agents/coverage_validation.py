@@ -1,13 +1,28 @@
 """
-Coverage Validation Agent — v1 (JSON-backed retrieval, no ChromaDB).
+Coverage Validation Agent — v2 (ChromaDB vector retrieval, JSON fallback).
 
-Retrieves up to 3 LCD/NCD policy documents from the JSON policy repository
-that match the claim's CPT and ICD-10 codes, then asks Claude (via structured
-tool use) to evaluate coverage and medical necessity.
+Retrieves up to 3 LCD/NCD/Article policy chunks for the claim's CPT and
+ICD-10 codes, then asks Claude (via structured tool use) to evaluate coverage
+and medical necessity.
+
+Retrieval order (see _retrieve_policies()):
+  1. Query the ChromaDB vector store (retrieval/vector_store.py) built from
+     real CMS ingestion (retrieval/ingest.py + retrieval/chunking.py).
+  2. If the vector store is empty, returns no results, or raises — fall back
+     to the curated JSON policy corpus (retrieval/policy_repository.py).
+  3. If both are empty — no retrieval, no model call, return [].
+
+This fallback exists because the ChromaDB index must be explicitly seeded via
+scripts/ingest_coverage.py before it has anything to query; until then (or if
+ingestion/embedding fails at demo time), the JSON corpus keeps the existing
+demo scenarios working exactly as before. Both retrieval paths are converted
+into the same policy-dict shape before reaching _build_user_message() and
+_parse_response() — neither of those functions, nor the tool schema, citation
+grounding, or audit workflow downstream, changed in this swap.
 
 Governance rules (all enforced here):
   - No API key → return []
-  - No retrieved LCD/NCD policy → return []
+  - No retrieved LCD/NCD/Article policy (from either source) → return []
   - One model call per invocation, no background calls
   - Model must call a tool (tool_choice="any"); otherwise return []
   - citation_doc_id not in retrieved set → suppress finding
@@ -17,11 +32,13 @@ Governance rules (all enforced here):
 import hashlib
 import logging
 import os
+import pathlib
 
 import anthropic
 from dotenv import load_dotenv
 
 from retrieval.policy_repository import find_policies_by_codes
+from retrieval.vector_store import VectorStore
 from rules.models import Citation, ClaimIn, Finding
 
 load_dotenv()
@@ -31,6 +48,9 @@ logger = logging.getLogger(__name__)
 _DEFAULT_MODEL = "claude-haiku-4-5"
 _LCD_SOURCE_TYPES = {"LCD", "NCD"}
 _MAX_POLICIES = 3
+_CHROMA_DIR = pathlib.Path(__file__).parent.parent / "retrieval" / "chroma_db"
+
+_vector_store_instance: VectorStore | None = None
 
 _SYSTEM_PROMPT = (
     "You are a medical billing compliance specialist reviewing a healthcare claim "
@@ -131,15 +151,10 @@ def validate_coverage(claim: ClaimIn) -> list[Finding]:
     if not api_key:
         return []
 
-    all_policies = find_policies_by_codes(
-        cpt_codes=claim.cpt_codes,
-        icd10_codes=claim.icd10_codes,
-    )
-    lcd_policies = [p for p in all_policies if p.get("source_type") in _LCD_SOURCE_TYPES]
+    lcd_policies = _retrieve_policies(claim)
     if not lcd_policies:
         return []
 
-    lcd_policies = lcd_policies[:_MAX_POLICIES]
     retrieved_doc_ids = {p["document_id"] for p in lcd_policies}
 
     model = os.getenv("ANTHROPIC_MODEL", _DEFAULT_MODEL)
@@ -160,6 +175,76 @@ def validate_coverage(claim: ClaimIn) -> list[Finding]:
         return []
 
     return _parse_response(response, retrieved_doc_ids, lcd_policies, claim.claim_id)
+
+
+def _get_vector_store() -> VectorStore:
+    """Lazily construct the single process-lifetime VectorStore against retrieval/chroma_db/."""
+    global _vector_store_instance
+    if _vector_store_instance is None:
+        _vector_store_instance = VectorStore(persist_directory=_CHROMA_DIR)
+    return _vector_store_instance
+
+
+def _build_retrieval_query(claim: ClaimIn) -> str:
+    """Build a semantic query from the claim's CPT/HCPCS and ICD-10 codes."""
+    parts = []
+    if claim.cpt_codes:
+        parts.append("CPT codes: " + ", ".join(claim.cpt_codes))
+    if claim.icd10_codes:
+        parts.append("ICD-10 codes: " + ", ".join(claim.icd10_codes))
+    return ". ".join(parts)
+
+
+def _vector_result_to_policy(result: dict) -> dict:
+    """Convert a vector_store.query() chunk result into the policy-dict shape _build_user_message() expects."""
+    return {
+        "document_id": result.get("document_id", ""),
+        "title": result.get("document_title", ""),
+        "section": result.get("section_heading", ""),
+        "effective_date": result.get("effective_date"),
+        "edition": "",
+        "excerpt": result.get("text", ""),
+    }
+
+
+def _retrieve_from_vector_store(claim: ClaimIn) -> list[dict]:
+    """
+    Query the ChromaDB vector store. Returns [] (never raises) if the query
+    text is empty, the store is empty, or the store raises for any reason —
+    all of these defer to the JSON fallback in _retrieve_policies().
+    """
+    query_text = _build_retrieval_query(claim)
+    if not query_text:
+        return []
+
+    try:
+        store = _get_vector_store()
+        if store.count() == 0:
+            return []
+        results = store.query(query_text, n_results=_MAX_POLICIES)
+    except Exception as exc:
+        logger.warning("Vector store retrieval failed, falling back to JSON policy corpus: %s", exc)
+        return []
+
+    return [_vector_result_to_policy(r) for r in results[:_MAX_POLICIES]]
+
+
+def _retrieve_from_json_fallback(claim: ClaimIn) -> list[dict]:
+    """Curated JSON policy corpus — the only retrieval path before this sprint."""
+    all_policies = find_policies_by_codes(
+        cpt_codes=claim.cpt_codes,
+        icd10_codes=claim.icd10_codes,
+    )
+    lcd_policies = [p for p in all_policies if p.get("source_type") in _LCD_SOURCE_TYPES]
+    return lcd_policies[:_MAX_POLICIES]
+
+
+def _retrieve_policies(claim: ClaimIn) -> list[dict]:
+    """Vector store first; JSON policy corpus if the vector store has nothing usable."""
+    vector_policies = _retrieve_from_vector_store(claim)
+    if vector_policies:
+        return vector_policies
+    return _retrieve_from_json_fallback(claim)
 
 
 def _build_user_message(claim: ClaimIn, lcd_policies: list[dict]) -> str:

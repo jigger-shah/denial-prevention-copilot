@@ -592,6 +592,54 @@ Replace the `find_policies_by_codes(...)` call and `_LCD_SOURCE_TYPES` filter in
 
 ---
 
+## ADR-013: Coverage Validation Agent v2 — Vector-First Retrieval with JSON Fallback
+
+**Status:** Decided — implemented
+**Decided:** Phase 4, Session 1D
+
+### Context
+
+ADR-012's "Upgrade Path" specified replacing the JSON `find_policies_by_codes()` call outright with `vector_store.query()` once Phase 4 was complete. By the time Phase 4 (Sessions 1A–1D) finished, the actual constraint was clearer: the ChromaDB index has no seeded corpus (Session 1D's scope explicitly excluded bulk CMS downloads and large-corpus seeding — see `docs/Roadmap.md` Phase 4). A hard replacement would mean every claim review produces zero coverage findings until someone manually runs ingestion against a real, populated set of LCDs/NCDs — a regression from v1's working (if limited) JSON-backed demo.
+
+### Decision
+
+`agents/coverage_validation.py` retrieval is now a fallback chain, not a replacement:
+1. `_retrieve_from_vector_store(claim)` — builds a query from the claim's CPT/HCPCS and ICD-10 codes, queries `VectorStore.query()` (capped at `_MAX_POLICIES`). Returns `[]` if the query text is empty, the store is empty (`count() == 0`), or `query()` raises any exception.
+2. `_retrieve_from_json_fallback(claim)` — the original v1 path (`find_policies_by_codes()` filtered to `source_type in {"LCD", "NCD"}`), used only when step 1 returns `[]`.
+3. `_retrieve_policies(claim)` is the single entry point encoding this order; `validate_coverage()` calls only this.
+
+Vector chunk results are converted to the same policy-dict shape (`document_id`, `title`, `section`, `effective_date`, `edition`, `excerpt`) the JSON path already produced, via `_vector_result_to_policy()`, so `_build_user_message()` and `_parse_response()` — including citation grounding (`citation_doc_id` must be in the retrieved set) — required zero changes.
+
+### Rationale
+
+**An empty index must not be a regression.** Falling back to JSON when the vector store has nothing means a fresh checkout, or a checkout where ingestion hasn't been run yet, behaves exactly like v1. The vector path is additive, not a cutover.
+
+**Fallback on `count() == 0` is checked before `query()` is called**, not just on an empty/exception result from `query()` itself — this avoids embedding-model overhead (loading the ONNX model) on every claim review when the index is known to be empty, which is the common case until a corpus is seeded.
+
+**Broad exception handling on the vector path is intentional.** Any ChromaDB failure (corrupted index, missing embedding model, disk issue) degrades to JSON rather than blocking coverage validation entirely — consistent with the project's existing pattern of never letting infrastructure failures block claim review (e.g. NPPES timeout silently skipping the NPI finding in `rules/npi.py`).
+
+**No new governance surface.** Citation grounding, the `_MAX_POLICIES` cap, the "no retrieved policy → no AI finding" rule, the tool schema, and the audit workflow are all unchanged — the swap is purely about where `lcd_policies` comes from before reaching the existing model-call and parsing logic.
+
+### Alternatives considered
+
+| Option | Reason not chosen |
+|---|---|
+| Hard cutover to ChromaDB only (as ADR-012 originally specified) | Regresses to zero findings on any unseeded or freshly-cloned environment — worse than v1 for no governance benefit |
+| Merge vector + JSON results together | Risks citing two different "shapes" of evidence for the same claim and complicates the `_MAX_POLICIES` cap; an either/or fallback is simpler to reason about and test |
+| Fall back only on `query()` exception, not on `count() == 0` | Wastes the embedding-model load cost on every review while the index is empty, which is the default state until a corpus is seeded |
+
+### TD-18 resolution as a prerequisite
+
+Before writing the swap, live calls were made against `api.coverage.cms.gov` to validate the field-name assumptions `retrieval/ingest.py` had been built against in Session 1C (unverified at the time due to no network access). This found and fixed a real bug — CMS responses are wrapped in a `{"meta", "data": [...]}` envelope, not flat dicts — plus wrong endpoint URLs, a missing Bearer-token flow for LCD/Article, and several wrong field names. See `docs/Technical_Debt_Register.md` TD-18 (resolved) and TD-19 (new: contractor name not populated, low priority). This was necessary groundwork, not scope creep: Session 1D's vector path is only as trustworthy as the ingestion feeding it, even though the seeded-corpus question itself stayed out of scope.
+
+### Implications
+
+- `tests/test_coverage_validation.py` gained an autouse `mock_vector_store` fixture (default `count() == 0`) so all 14 pre-existing tests exercise the JSON fallback exactly as before, with 10 new tests added for the vector path, conversion, grounding-with-vector-doc-id, and each fallback trigger (empty list, exception, both empty).
+- No real ChromaDB instance or Anthropic API call is created in any coverage_validation test.
+- The ChromaDB index remains unseeded after this session — running `scripts/ingest_coverage.py` followed by `chunk_document()` + `VectorStore.index()` against a real corpus is a separate, future action, not part of this ADR.
+
+---
+
 ## Tradeoffs Summary
 
 | Decision | Speed | Correctness | Explainability | Future-Proofing |

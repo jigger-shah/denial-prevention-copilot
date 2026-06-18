@@ -5,6 +5,8 @@
 **Branch:** main
 **Last commit:** Expand coverage policy corpus: 14 new LCD/NCD entries, 27 retrieval validation tests, 6 demo scenarios
 
+> **Update (Phase 4, Sessions 1A–1D, post-2026-06-16):** This report predates Phase 4. The RAG pipeline described below as "0% built" / "stubs" is now implemented: `retrieval/chunking.py`, `retrieval/vector_store.py`, and `retrieval/ingest.py` are all live (the last verified against real CMS Coverage API responses — see `Technical_Debt_Register.md` TD-18), and `agents/coverage_validation.py` (Session 1D) now queries the ChromaDB vector store first, falling back to the JSON policy corpus described in this report only when the vector store is empty, returns nothing, or raises. The vector store is **not pre-seeded** with a real corpus, so in a fresh checkout the JSON-fallback behavior this report describes is still what actually runs end-to-end — this report's architecture and gap analysis otherwise remains accurate for everything outside Phase 4/5v2. See `docs/Roadmap.md` Phase 4 and `docs/Technical_Debt_Register.md` TD-05 (resolved) / TD-18 (resolved) / TD-19 (new) for current detail rather than the "Gap 2"/"Gap 3" sections below.
+
 ---
 
 ## Table of Contents

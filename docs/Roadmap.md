@@ -278,7 +278,7 @@ Replace all hardcoded rule data with real CMS reference files. Add NPI live vali
 
 ## Phase 4 — LCD/NCD Retrieval Pipeline
 
-**Status:** In progress — split into sub-sessions to avoid stacking multiple unverified layers at once
+**Status:** ✅ Complete (Sessions 1A–1D), split into sub-sessions to avoid stacking multiple unverified layers at once. The ChromaDB index itself is not pre-seeded with a real corpus — see Session 1D note below.
 **Estimated scope:** 4 implementation sessions (1A–1D)
 
 ### Objectives
@@ -304,9 +304,13 @@ Build the data pipeline that fetches CMS coverage policies (LCDs and NCDs) and i
 - `data/reference/coverage/` added to `.gitignore` — raw CMS downloads are not committed, same pattern as `data/reference/ncci/`
 - **Field-name caveat:** the CMS Coverage API's exact response schema could not be verified against a live call from this environment (outbound network restricted). `normalize_lcd/_ncd/_article()` check multiple plausible field names per CMS documentation conventions and default missing fields gracefully; this needs verification against one real API response before being relied on for an actual demo (see TD-18)
 
-### Session 1D — Coverage Agent v2 Swap 🔜
-- `agents/coverage_validation.py`: query `vector_store` first, fall back to JSON `policy_repository` if ChromaDB is empty
-- Preserves existing UI and audit workflow; only the retrieval call changes
+### Session 1D — Coverage Agent v2 Swap ✅ Complete
+- `agents/coverage_validation.py`: `_retrieve_policies()` queries `vector_store` first (`_retrieve_from_vector_store()`); falls back to JSON `policy_repository.find_policies_by_codes()` (`_retrieve_from_json_fallback()`) when the vector store is empty, returns nothing for the query, or raises any exception
+- Vector chunk results are converted to the existing policy-dict shape via `_vector_result_to_policy()` before reaching `_build_user_message()`/`_parse_response()` — neither of those, nor the tool schema, citation grounding, or audit workflow, changed
+- `_MAX_POLICIES` cap (3) and the "no retrieved policy → no AI finding" rule preserved across both retrieval paths
+- Before coding: made live calls against `api.coverage.cms.gov` to resolve TD-18 (see Technical_Debt_Register.md) — found and fixed a real bug in `retrieval/ingest.py` (responses are wrapped in a `{"meta", "data": [...]}` envelope, not flat dicts), corrected endpoint URLs, added the missing Bearer-token flow for LCD/Article, and corrected every guessed field name against live LCD/NCD/Article records
+- 24 tests in `tests/test_coverage_validation.py` (up from 14) using a `MagicMock` for `_get_vector_store()` — no real ChromaDB or Anthropic calls
+- **ChromaDB index is not pre-seeded.** A fresh checkout's vector store is empty, so every claim review uses the JSON fallback until someone runs `scripts/ingest_coverage.py` + chunking + indexing for a real set of documents (intentionally out of scope for this phase — no bulk download, no large seeded corpus)
 
 ### Dependencies
 - Phase 3 complete (code validity and NPI checks ensure the claim reaching the agent layer is deterministically clean first)
@@ -508,10 +512,10 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 | 2.75 — Manual Claim Intake | ✅ | Service-line grid, build_manual_claim, 83 tests | P0 |
 | 2.8 — File-Backed NCCI PTP | ✅ | ncci_loader, ~1.73M active pairs, 127 tests | P0 |
 | 3 — Complete Deterministic Layer | ✅ MVP-complete | Phase A+B+Sprint 8 done (Units + MUE + NPI + UI); ICD-10-CM deferred | P0 |
-| 4 — LCD/NCD Retrieval | 🔜 | ChromaDB, CMS ingestion | P0 (dep) |
+| 4 — LCD/NCD Retrieval | ✅ Complete (1A–1D) | chunking, ChromaDB vector_store, CMS ingestion (TD-18 verified live), 44 new tests | P0 (dep) |
 | 5 — Coverage Agent v1 | ✅ v1 complete | JSON-backed retrieval, structured tool use, citation grounding, 14 mocked tests (Sprint 9) | P0 |
 | 5 — Option A corpus expansion | ✅ v1+ complete | 14 new LCD/NCD entries (18 total), 27 retrieval validation tests, 6 demo scenarios (Sprint 10) | P0 |
-| 5v2 — Coverage Agent (ChromaDB) | 🔜 | Swap JSON retrieval for ChromaDB after Phase 4 | P0 |
+| 5v2 — Coverage Agent (ChromaDB) | ✅ Complete (Session 1D) | Vector-first retrieval with JSON fallback; index not pre-seeded | P0 |
 | 6 — Documentation Agent | 🔜 | Clinical note analysis | P1 |
 | 7 — Orchestrator + Synthesis | 🔜 | Full 4-agent pipeline | P0 |
 | 8 — Evaluation | 🔜 | Golden set, precision/recall | P0 metric |
