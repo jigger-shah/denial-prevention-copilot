@@ -1,6 +1,8 @@
 # Denial Prevention Copilot
 
-Agentic pre-submission claim review that catches denial risks before a claim leaves the building. Four specialized agents validate coding, coverage, documentation, and synthesize a denial risk score — every finding backed by a cited source. Humans make every final call.
+Agentic pre-submission claim review that catches denial risks before a claim leaves the building. A deterministic rule layer (NCCI, MUE, NPI, code validity) and a citation-grounded Coverage Validation Agent feed a single Unified Review that synthesizes a denial risk score — every AI finding backed by a cited LCD/NCD source. Humans make every final call.
+
+A Documentation Review Agent remains part of the product vision and roadmap but is currently deferred (not implemented, not required for this MVP) — see `docs/Roadmap.md` Phase 6.
 
 Built on free public data: NPPES NPI Registry, CMS Coverage API (NCDs/LCDs), NCCI PTP and MUE files, ICD-10-CM, HCPCS Level II. Synthetic claims only — no PHI.
 
@@ -27,4 +29,4 @@ pytest tests/
 
 ## Architecture
 
-See `docs/PRD_Agentic_Claims_Review_and_Denial_Prevention_Copilot.pdf` for the full product spec. High-level: deterministic rule checks (rules/) run before any LLM call; agents (agents/) run in parallel via the orchestrator; findings are grounded in retrieved LCD/NCD text (retrieval/); all decisions land in an immutable audit log (db/).
+See `docs/PRD_Agentic_Claims_Review_and_Denial_Prevention_Copilot.pdf` for the full product spec. High-level: deterministic rule checks (`rules/`) run before any LLM call, with a HIGH NPI finding short-circuiting downstream checks; the orchestrator (`agents/orchestrator.py`) then calls the Coverage Validation Agent and synthesizes both into one `RiskAssessment` (`agents/denial_prevention.py`) — no LLM call in synthesis; coverage findings are grounded in retrieved LCD/NCD text (`retrieval/`); all decisions land in an immutable audit log (`db/`).

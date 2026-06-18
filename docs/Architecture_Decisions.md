@@ -397,13 +397,9 @@ _PROVIDERS: list[RuleProvider] = [ncci, code_validity, mue, npi]
 
 ---
 
-### DEFER-003: RiskAssessment Pydantic Model
+### ~~DEFER-003: RiskAssessment Pydantic Model~~ — Resolved Phase 7 (plain dataclass chosen)
 
-**Decision pending:** Whether `RiskAssessment` (referenced in CLAUDE.md as the orchestrator's return type) should be a Pydantic model or a plain dataclass.
-
-**Current state:** Not yet implemented. `agents/denial_prevention.py` is a stub.
-
-**Recommendation when implemented:** Use Pydantic for `RiskAssessment` because it is a cross-boundary object (agent layer → UI) and benefits from validation. Keep `Finding` and `Citation` as plain dataclasses (no external dependency in the rule layer).
+**Resolution:** Implemented as a plain `dataclass` in `rules/models.py`, consistent with `Finding` and `Citation`, not Pydantic. `RiskAssessment(score, findings, escalation_required, checks_run)` is constructed entirely from already-validated `Finding` objects within a single process (`agents.orchestrator` → `agents.denial_prevention` → `app/main.py`) — it never crosses a serialization boundary (no JSON API, no DB round-trip) in the light-orchestrator scope, so Pydantic's validation-on-parse benefit doesn't apply. Revisit if `RiskAssessment` is ever persisted directly or exposed over an API.
 
 ---
 
@@ -683,6 +679,47 @@ Re-chunked and re-indexed the two already-cached documents (no new network calls
 
 ---
 
+## ADR-015: Light Orchestrator Scope — Defer Documentation Review, Skip a Separate Coding Validation Agent
+
+**Status:** Decided — implemented
+**Decided:** Phase 7, "Unified Review" session
+
+### Context
+
+The original Phase 7 plan (see `docs/Roadmap.md` Phase 7, pre-revision) called for a full four-agent architecture: orchestrator dispatches Coverage Validation and Documentation Review in parallel, then Denial Prevention synthesizes all findings. At the time this milestone was scoped, only Coverage Validation existed; Documentation Review, Coding Validation, the orchestrator, and the denial-prevention synthesis layer were all still docstring stubs (TD-04).
+
+A milestone-evaluation pass (6 candidate next milestones, see project history) concluded the MVP already demonstrates strong AI product value through deterministic CMS validation, real CMS RAG retrieval, the Coverage Validation Agent, citation grounding, human review, and the audit trail. The judgment was that unified review and risk synthesis — not a second LLM agent — was the higher-priority next milestone.
+
+### Decision
+
+Implement `agents/orchestrator.py` and `agents/denial_prevention.py` against a **light** scope: combine only the rule layer and the Coverage Validation Agent into one `RiskAssessment`. Documentation Review is not implemented and not called. No placeholder finding, no "not yet implemented" user-facing finding, and no entry in `checks_run` is fabricated for it. Coding Validation is not built as a separate LLM agent in this milestone at all — it would duplicate the rule layer's NCCI/MUE/code_validity checks.
+
+Documentation Review remains in the product vision (PRD §9's four-agent architecture) and on the roadmap, marked "Deferred / Under Evaluation" — not removed, not abandoned, to be revisited before public release.
+
+### Rationale
+
+**Ship the synthesis layer now; it doesn't need to wait for every agent to exist.** `RiskAssessment(score, findings, escalation_required, checks_run)` is well-defined over "however many findings actually exist this run" — nothing about its shape requires exactly four agent sources. Building it against two sources (rules + coverage) now means Documentation Review, when it ships, is an additive call into an already-working synthesis function, not a redesign.
+
+**A placeholder finding is worse than no finding.** A "Documentation Review: not yet implemented" finding displayed in the UI would look like a real governance signal — exactly the kind of unverifiable claim the project's "no citation → no finding" principle (ADR-002, ADR-012) exists to prevent. Silence about an unimplemented capability is honest; a fake finding about it is not.
+
+**`checks_run` reflects what executed, not what's planned.** Consistent with the existing rule-layer `CHECKS_RUN` semantics (a clean claim still lists all 5 rule checks as run, because they ran and found nothing) — Documentation Review is absent from `checks_run` because it never executes in this milestone, the same logic by which a short-circuited claim's `checks_run` has one entry instead of six.
+
+**Coding Validation as a separate agent is a non-goal, not a deferral.** Unlike Documentation Review (a real future capability), an LLM-based Coding Validation agent would re-litigate questions the rule layer already answers deterministically and more reliably (ADR-001). There is no future version of this agent planned; TD-04's reference to it is tracked for completeness, not as a roadmap commitment.
+
+### Alternatives Considered
+
+- **Implement all four agents in this milestone:** Rejected by the milestone-evaluation pass — broader AI surface area was judged lower-value right now than unified review and synthesis over what already exists.
+- **Stub Documentation Review with a placeholder LOW finding ("documentation review not available"):** Rejected — looks like a real finding to a reviewer or auditor, violates the project's citation-integrity principle, and was explicitly ruled out by name in the milestone's approved scope.
+- **Wait to build the orchestrator until Documentation Review also exists:** Rejected — delays the synthesis layer (`RiskAssessment`, escalation logic) for a dependency it doesn't structurally need.
+
+### Implications
+
+- `agents/orchestrator.py:run_review()` detects the rule-layer short-circuit via `f.rule == "npi_invalid" and f.severity == "HIGH"` — the same detection rule already used in `app/main.py:_render_checks_summary()` — to decide whether to call the coverage agent at all and what `checks_run` should contain.
+- When Documentation Review is eventually implemented, it slots into `run_review()` as one more call before `denial_prevention.synthesize()`, with its own entry added to `checks_run` only when it actually executes — no change to `denial_prevention.synthesize()`'s signature or logic is anticipated.
+- `tests/test_orchestrator.py` includes 3 dedicated tests (`test_no_documentation_review_placeholder_finding_ever_appears`, `test_no_coding_validation_placeholder_finding_ever_appears`, `test_no_documentation_review_label_in_checks_run`) that would fail if a future change accidentally introduced a placeholder — a regression guard for this ADR's decision, not just a coverage metric.
+
+---
+
 ## Tradeoffs Summary
 
 | Decision | Speed | Correctness | Explainability | Future-Proofing |
@@ -697,3 +734,4 @@ Re-chunked and re-indexed the two already-cached documents (no new network calls
 | Narrow audit scope | ✅ Ships sooner | ➖ Incomplete schema | — | ✅ No dead tables |
 | Local policy JSON | ✅ No infra required | ➖ Curated, not comprehensive | ✅ Real source URLs shown | ✅ Same interface as future ChromaDB |
 | Intake transform separate from render | ➖ Two files instead of one | ✅ Logic testable without Streamlit | ✅ One entry point to audit | ✅ Rule engine unchanged for all intake paths |
+| Light orchestrator (defer Documentation Review) | ✅ Ships synthesis sooner | ✅ No fabricated findings | ✅ Honest "not implemented" via absence, not a fake finding | ✅ Additive when Documentation Review ships |

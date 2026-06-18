@@ -363,7 +363,7 @@ Implement the first LLM agent. Wire Claude Sonnet 4.6 via the Anthropic SDK with
 
 ## Phase 6 — Documentation Review Agent
 
-**Status:** Future  
+**Status:** Deferred / Under Evaluation. Remains part of the product vision (PRD §9's four-agent architecture) but is not required for the current MVP or public release. Revisit before public release.
 **Estimated scope:** 2–3 implementation sessions
 
 ### Objectives
@@ -379,7 +379,7 @@ Implement the documentation review agent that analyzes clinical note text for E/
 - `app/main.py`: note text display in claim details expander (if present)
 
 ### Dependencies
-- Phase 5 complete (orchestrator pattern established)
+- Phase 7 (light orchestrator) complete — done, see below. Full parallel dispatch is not a prerequisite; Phase 6 can be wired into `agents/orchestrator.py` as an additional sequential or parallel call whenever it is implemented.
 - Claude Sonnet 4.6 access
 
 ### Success Criteria
@@ -387,41 +387,47 @@ Implement the documentation review agent that analyzes clinical note text for E/
 - A claim with no note attached receives a single LOW finding noting the limitation
 - Documentation findings save to the audit log with the same governance controls as rule findings
 
+### Deferral rationale (decided alongside Phase 7 scoping)
+The MVP already demonstrates strong AI product value through deterministic CMS validation, real CMS RAG retrieval, the Coverage Validation Agent, citation grounding, human review, and the audit trail. A second LLM agent adds breadth, not the missing piece — Unified Review (Phase 7) and risk synthesis were judged the higher-priority next milestone. Documentation Review is not removed from the roadmap; it is sequenced after Golden Set Evaluation / public-release work, to be revisited explicitly before public release.
+
 ---
 
-## Phase 7 — Orchestrator + Denial Prevention Agent
+## Phase 7 — Light Orchestrator + Denial Prevention Agent (Unified Review) ✅ Complete
 
-**Status:** Future  
-**Estimated scope:** 2–3 implementation sessions
+**Tests:** 308 tests, all passing (+19)
 
 ### Objectives
-Wire all agents into the orchestrator and implement the synthesis layer that produces the final `RiskAssessment`. This phase completes the four-agent architecture from PRD §9.
+Wire the rule layer and the one implemented LLM agent (Coverage Validation) into a single orchestrator call, and implement the deterministic synthesis layer that produces a `RiskAssessment`. This is a **light** scope, deliberately narrower than the original four-agent Phase 7 plan: Documentation Review and Coding Validation are deferred (see Phase 6 above and `docs/Technical_Debt_Register.md` TD-04) rather than implemented as placeholders.
 
 ### Deliverables
-- `agents/orchestrator.py`: full implementation
-  - Validates claim schema
-  - Runs rule layer synchronously; hard NPI failure short-circuits
-  - Dispatches coverage and documentation agents in parallel (ThreadPoolExecutor)
-  - Collects all findings and passes to Denial Prevention Agent
-  - If aggregate confidence < threshold: sets `escalation_required=True`
-- `agents/denial_prevention.py`: full implementation
-  - Aggregates findings from all sources
-  - Computes `RiskAssessment(score, findings, escalation_required, checks_run)`
-  - Applies denial pattern heuristics (payer-specific CARC patterns, severity adjustments)
-  - No LLM call — deterministic synthesis
-- `db/` extended: `claims` and `findings` tables added to `AuditRepository` (or a new `ClaimRepository`)
-- `app/main.py`: escalation banner when `escalation_required=True`
-- `tests/test_orchestrator.py`: full implementation with mocked LLM responses
+- `rules/models.py`: `RiskAssessment` dataclass added — `score`, `findings`, `escalation_required`, `checks_run`
+- `agents/orchestrator.py`: full implementation (light scope)
+  - Runs the rule layer synchronously (`rules.rule_engine.review_claim()`); a HIGH NPI finding short-circuits before NCCI/MUE/code validity, exactly as it already did
+  - If not short-circuited, calls the Coverage Validation Agent (the only implemented LLM agent) and includes it in `checks_run`
+  - If short-circuited, the coverage agent is not called at all — `checks_run` has one entry (NPI)
+  - Passes rule findings + coverage findings to `agents/denial_prevention.synthesize()` for deterministic scoring
+  - Does not call, does not list in `checks_run`, and does not fabricate a placeholder finding for Documentation Review or Coding Validation
+- `agents/denial_prevention.py`: full implementation (deterministic synthesis, no LLM call)
+  - Combines rule findings + coverage findings, sorted HIGH → MEDIUM → LOW
+  - `score` reuses `rules.rule_engine.overall_risk()` over the combined list
+  - `escalation_required` is `True` when any finding's confidence is below `CONFIDENCE_REVIEW_THRESHOLD = 0.70` — the same threshold already used for the per-finding "Manual Review Recommended" caption in `app/main.py`
+  - `checks_run` passed through unchanged from the orchestrator
+- `app/main.py`: unified "🚀 Run Full Review" button (both Sample and Manual modes) — the recommended/default path; existing rule-layer-only "Review Claim" button preserved and relabeled, demoted from primary; `_render_full_review_results()` renders one consolidated findings list, an NPI short-circuit caption, the checks-run caption, and an escalation banner when `escalation_required` is true
+- `tests/test_orchestrator.py`: full implementation, 11 tests, mocked Coverage Validation Agent (no real Anthropic calls)
+- `tests/test_denial_prevention.py`: new, 8 tests, pure unit tests (no mocking needed — no I/O in `synthesize()`)
 
 ### Dependencies
-- Phases 5 and 6 complete
+- Phase 5 (Coverage Validation Agent v1/v2) complete
 
 ### Success Criteria
-- Full review of CLM-001 produces all 4 finding types: NCCI (rule), dx conflict (rule), coverage (agent), documentation (agent)
-- Parallel agent dispatch completes in < 30 seconds (PRD §7 Story 1 acceptance criteria)
-- Claims with aggregate confidence < 70% display an escalation banner
-- `RiskAssessment` is persisted to the audit log
-- `tests/test_orchestrator.py` passes with mocked LLM responses
+- A full review returns rule findings + coverage findings in one `RiskAssessment` ✅
+- No fake or placeholder findings are generated for Documentation Review or Coding Validation ✅ (3 dedicated tests assert this)
+- Audit workflow works unchanged for actual findings ✅
+- UI supports a coherent one-click review flow ✅
+- All 308 tests pass ✅
+
+### Scope note
+Coding Validation is not built as a separate LLM agent at all in this milestone — doing so would duplicate the rule layer's NCCI/MUE/code_validity checks, which are already deterministic and tested. Documentation Review remains a deferred future capability (Phase 6 above), not an MVP blocker.
 
 ---
 
@@ -522,8 +528,8 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 | 5 — Coverage Agent v1 | ✅ v1 complete | JSON-backed retrieval, structured tool use, citation grounding, 14 mocked tests (Sprint 9) | P0 |
 | 5 — Option A corpus expansion | ✅ v1+ complete | 14 new LCD/NCD entries (18 total), 27 retrieval validation tests, 6 demo scenarios (Sprint 10) | P0 |
 | 5v2 — Coverage Agent (ChromaDB) | ✅ Complete (Session 1D) | Vector-first retrieval with JSON fallback; index not pre-seeded | P0 |
-| 6 — Documentation Agent | 🔜 | Clinical note analysis | P1 |
-| 7 — Orchestrator + Synthesis | 🔜 | Full 4-agent pipeline | P0 |
+| 6 — Documentation Agent | ⏸️ Deferred / Under Evaluation | Clinical note analysis — not an MVP blocker | P1 |
+| 7 — Light Orchestrator + Synthesis | ✅ Complete (light scope) | Unified Review: rule layer + Coverage Agent → RiskAssessment, 308 tests | P0 |
 | 8 — Evaluation | 🔜 | Golden set, precision/recall | P0 metric |
 | 9 — Portfolio Publication | 🔜 | Public README, screenshots | Portfolio |
 | 10 — Streamlit Cloud | 🔜 | Live public URL | Portfolio |

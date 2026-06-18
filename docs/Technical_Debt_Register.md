@@ -2,7 +2,7 @@
 ## Denial Prevention Copilot
 
 **Last updated:** June 2026
-**Scope:** All known technical debt as of Sprint 9 (Coverage Validation Agent v1 — first LLM integration, JSON-backed retrieval, citation grounding, 14 mocked tests)
+**Scope:** All known technical debt as of Phase 7 light orchestrator (Unified Review — `agents/orchestrator.py` + `agents/denial_prevention.py` implemented, 308 tests passing)
 
 Priority definitions:
 - **High** — blocks a P0 PRD requirement, a core demo scenario, or correct audit behavior
@@ -82,28 +82,28 @@ Behavior: empty NPI → no finding (optional field); non-numeric or wrong length
 
 ---
 
-#### TD-04: Most LLM Agents Still Stubs (Partially Resolved Sprint 9)
+#### TD-04: Most LLM Agents Still Stubs (Partially Resolved Sprint 9; Orchestrator + Synthesis Resolved Phase 7 light scope)
 
 **Resolution (Partial):** `agents/coverage_validation.py` is implemented as of Sprint 9. `validate_coverage(claim)` calls Claude via structured tool use, enforces citation grounding, and returns 0 or 1 `Finding` object. 14 mocked tests cover all governance paths. See ADR-012 for design decisions.
 
-**Remaining:** `agents/coding_validation.py`, `agents/documentation_review.py`, `agents/denial_prevention.py`, and `agents/orchestrator.py` still contain only docstrings.
+**Resolution (Phase 7, light scope):** `agents/orchestrator.py` and `agents/denial_prevention.py` are now implemented. `run_review(claim)` runs the rule layer, calls the Coverage Validation Agent when not short-circuited, and passes both finding sets to `denial_prevention.synthesize()` for a deterministic `RiskAssessment`. See ADR-015 for the scoping rationale (light orchestrator, two sources combined — not the original four-agent plan).
 
-**Description:** `agents/coding_validation.py`, `agents/documentation_review.py`, `agents/denial_prevention.py`, and `agents/orchestrator.py` all contain docstrings describing their intended behavior but no implementation.
+**Remaining:** `agents/coding_validation.py` and `agents/documentation_review.py` still contain only docstrings. Documentation Review is **Deferred / Under Evaluation** — it remains part of the product vision (PRD §9) and the roadmap (`docs/Roadmap.md` Phase 6), to be revisited before public release, but is explicitly not required for the current MVP. Coding Validation is not planned as a separate LLM agent at all (see ADR-015 rationale) — it would duplicate rule-layer responsibilities already handled deterministically by NCCI/MUE/code_validity.
 
-**Location:** `agents/` (all files except coverage_validation.py)
+**Description:** `agents/coding_validation.py` and `agents/documentation_review.py` contain docstrings describing intended behavior but no implementation.
+
+**Location:** `agents/coding_validation.py`, `agents/documentation_review.py`
 
 **Impact:**
-- Documentation review findings do not exist.
-- The full PRD agentic architecture (§9 — four agents in parallel) is not yet assembled.
-- `coding_validation.py` duplicates rule-layer responsibilities (MUE, NCCI via LLM) — lowest priority.
+- Documentation review findings do not exist yet — by design for this milestone, not as an oversight. No placeholder finding is fabricated in its place (verified by 3 dedicated tests in `tests/test_orchestrator.py`).
+- The full four-agent PRD vision (§9) is not yet fully assembled; the orchestrator currently combines two sources (rules + coverage), not four.
 
 **Recommended Fix:**
-- Phase 6: Implement `documentation_review.py`.
-- Phase 7: Implement `orchestrator.py` and `denial_prevention.py`.
+- Phase 6 (when revisited, pre-public-release): Implement `documentation_review.py`, wire it into `agents/orchestrator.py` as an additional call before `denial_prevention.synthesize()`.
 - All agents must use Anthropic SDK structured tool use with `claude-sonnet-4-6` (or claude-haiku-4-5 for lighter tasks).
 - All agent findings must produce `Finding` objects conforming to the existing schema — no schema changes needed.
 
-**Planned Sprint:** Phases 6–7
+**Planned Sprint:** Phase 6 (deferred, revisit before public release)
 
 ---
 
@@ -172,21 +172,11 @@ Behavior: empty NPI → no finding (optional field); non-numeric or wrong length
 
 ---
 
-#### TD-08: `tests/test_orchestrator.py` Remains a Stub (Partially Resolved)
+#### ~~TD-08: `tests/test_orchestrator.py` Remains a Stub~~ — RESOLVED Phase 7 (light orchestrator)
 
-**Description:** `tests/test_rules.py` was a stub — now resolved with 35 MUE, NCCI, and code_validity tests (Sprint 6). `tests/test_orchestrator.py` is still a docstring-only stub.
+**Resolution:** `tests/test_orchestrator.py` is fully implemented — 11 tests, mocking `agents.orchestrator.validate_coverage` (the name orchestrator imports into its own namespace, matching the project's established mocking convention) rather than the Anthropic SDK directly, since `validate_coverage` is itself the unit boundary worth mocking at for this module. `tests/test_denial_prevention.py` was added alongside (8 tests, no mocking needed — `synthesize()` has no I/O). NPI rule tests were already added to `test_rules.py` in Phase B (Sprint 7), prior to this resolution.
 
-**Location:** `tests/test_orchestrator.py`
-
-**Impact:**
-- The orchestrator (when implemented in Phase 7) will have no test coverage at launch.
-- MUE, NCCI, code_validity now have test coverage. NPI still lacks test coverage (pending Phase B).
-
-**Recommended Fix:**
-- `test_orchestrator.py`: implement tests with mocked LLM responses once the orchestrator is wired. Mock at the Anthropic SDK boundary, not at the Finding level.
-- Add NPI rule tests to `test_rules.py` when `rules/npi.py` is implemented (Phase B).
-
-**Planned Sprint:** Phase 7 (`test_orchestrator.py`); Phase B (`test_rules.py` NPI additions)
+**Planned Sprint:** Resolved Phase 7.
 
 ---
 
@@ -430,13 +420,13 @@ All three `fetch_*()` functions were re-run live end-to-end through `chunk_docum
 
 | Priority | Count | Resolved | Open |
 |---|---|---|---|
-| High | 11 | 11 (R1–R5, TD-01, TD-02, TD-03, TD-05, TD-08 partial, TD-18) | 1 (TD-04, TD-06 — see note) |
-| Medium | 8 | 3 (TD-07, TD-07b, TD-08 remainder partial) | 5 (TD-07a, TD-09, TD-10, TD-11, TD-12, TD-21) |
+| High | 11 | 11 (R1–R5, TD-01, TD-02, TD-03, TD-05, TD-08, TD-18) | 1 (TD-04 partial, TD-06 — see note) |
+| Medium | 8 | 3 (TD-07, TD-07b, TD-08) | 5 (TD-07a, TD-09, TD-10, TD-11, TD-12, TD-21) |
 | Low | 7 | 1 (TD-17) | 6 (TD-13, TD-14, TD-15, TD-16, TD-19, TD-20) |
 | Sprint 3 additions | 3 | 3 | 0 |
-| **Total** | **29** | **18** | **11** |
+| **Total** | **29** | **19** | **10** |
 
-Note: TD-04 (most LLM agents still stubs) and TD-06 (two hardcoded code validity rules) remain open High items — both counted once but listed together since neither was touched this phase.
+Note: TD-04 (most LLM agents still stubs) is now partially resolved — orchestrator and denial_prevention are implemented (Phase 7, light scope); only Documentation Review (deferred, not a blocker) and Coding Validation (not planned as a separate agent) remain. TD-06 (two hardcoded code validity rules) remains fully open — neither was touched this phase. TD-08 (`test_orchestrator.py` stub) is now fully resolved.
 
 Items R1–R5 were addressed in the pre-audit model refactor and Sprint 2.
 Items R6–R8 were addressed in Sprint 3 (policy intelligence foundation).
@@ -466,3 +456,5 @@ The remaining open High items (TD-04, TD-05, TD-06) represent the core gap: LLM 
 2. **Stale `VectorStore` singleton after external re-indexing** (TD-21, new). Diagnosed by reproducing the exact `"Error creating hnsw segment reader: Nothing found on disk"` error in an isolated experiment and confirming it matched the running app's own log output. Root cause: the Streamlit process's cached `_vector_store_instance` was constructed against an empty collection before a separate process seeded it; ChromaDB's embedded HNSW reader doesn't pick up segments written after the handle was created. Workaround applied: restart the Streamlit process after running ingestion/indexing. No code fix applied this round — tracked as TD-21 with a self-healing-retry option for later.
 
 Separately investigated (no bug found): traced why two different live runs displayed two different sentences from the same retrieved chunk as `citation_excerpt` — confirmed this is the model selecting a sub-span of the full chunk it was given (intended tool-use behavior, the schema asks for a supporting excerpt, not the whole chunk), not truncation in chunking, retrieval, or cleanup. This investigation surfaced TD-20 (raw tool-call payloads and `citation_excerpt` are never persisted, so a saved decision's literal excerpt can't be reconstructed after the fact).
+
+**Phase 7 note (light orchestrator / Unified Review):** `agents/orchestrator.py` and `agents/denial_prevention.py` implemented against a deliberately light scope — combine the rule layer and the Coverage Validation Agent (the only implemented LLM agent) into one `RiskAssessment`, rather than the original four-agent plan. Documentation Review is explicitly deferred (marked "Deferred / Under Evaluation" in `docs/Roadmap.md`, not removed from the product vision) and Coding Validation is not planned as a separate LLM agent at all — see ADR-015 for the full rationale. No placeholder finding is fabricated for either; 3 dedicated tests in `tests/test_orchestrator.py` guard against this regressing. `RiskAssessment` added to `rules/models.py` as a plain dataclass (DEFER-003 resolved — Pydantic was considered and rejected since the object never crosses a serialization boundary in this scope). TD-04 partially resolved, TD-08 fully resolved. `app/main.py` gained a unified "🚀 Run Full Review" button (both Sample and Manual modes) as the recommended default path, alongside the existing rule-layer-only "Review Claim" button (preserved, relabeled, demoted from primary). 19 new tests (11 in `test_orchestrator.py`, 8 in `test_denial_prevention.py`, all mocking `agents.orchestrator.validate_coverage` — no real Anthropic calls in the suite). Total tests: 308 passing.
