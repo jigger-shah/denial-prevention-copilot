@@ -62,3 +62,27 @@ class Finding:
     confidence: float                            # 0.0–1.0; drives escalation in agent layer
     finding_id: str = ""                         # set by rule_engine after creation; empty until stamped
     source: str = "rule_layer"                   # "rule_layer" | "agent_layer"
+
+
+@dataclass
+class RiskAssessment:
+    """
+    Claim-level synthesis returned by agents.orchestrator.run_review().
+
+    score is one of "HIGH" | "MEDIUM" | "LOW" | "CLEAN" — derived from the
+    same severity ordering rules.rule_engine.overall_risk() already uses,
+    applied across the combined rule + agent findings rather than rules alone.
+
+    escalation_required is set when any finding's confidence falls below the
+    review threshold (see agents.denial_prevention.CONFIDENCE_REVIEW_THRESHOLD) —
+    a claim-level signal, distinct from the existing per-finding "Manual Review
+    Recommended" caption already shown in the UI.
+
+    checks_run lists only checks that actually executed for this claim (e.g. a
+    HIGH NPI short-circuit means only the NPI check ran — NCCI/MUE/code validity
+    and coverage validation are absent from this list, not just absent from findings).
+    """
+    score: str
+    findings: list[Finding]
+    escalation_required: bool
+    checks_run: list[str]

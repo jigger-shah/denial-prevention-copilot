@@ -32,6 +32,7 @@ load_dotenv()
 
 from rules.rule_engine import load_claim, review_claim, overall_risk, CHECKS_RUN
 from agents.coverage_validation import validate_coverage
+from agents.orchestrator import run_review
 from db.audit_repository import AuditDecision, AuditRepository
 from retrieval.policy_repository import get_citation_detail
 from app.claim_intake import (
@@ -279,6 +280,35 @@ def _render_checks_summary(findings: list) -> None:
         st.caption("Checks run: " + " · ".join(CHECKS_RUN))
 
 
+def _render_full_review_results(risk_assessment, claim_id: str, reviewer_name: str, repo: AuditRepository) -> None:
+    """Render a RiskAssessment from agents.orchestrator.run_review() — one consolidated findings list."""
+    label, kind = _RISK_CONFIG[risk_assessment.score]
+    getattr(st, kind)(label)
+
+    npi_short_circuited = any(
+        f.rule == "npi_invalid" and f.severity == "HIGH" for f in risk_assessment.findings
+    )
+    if npi_short_circuited:
+        st.caption(
+            "⚡ **NPI short-circuit:** invalid NPI stopped evaluation before "
+            "NCCI, MUE, code-validity, and coverage analysis ran."
+        )
+    st.caption("Checks run: " + " · ".join(risk_assessment.checks_run))
+
+    if risk_assessment.escalation_required:
+        st.warning(
+            "⚠️ **Manual Review Recommended** — one or more findings have confidence "
+            "below 70%. Escalate for human review before submission."
+        )
+
+    if risk_assessment.findings:
+        st.subheader(f"Findings ({len(risk_assessment.findings)})")
+        for finding in risk_assessment.findings:
+            _finding_card(finding, claim_id=claim_id, reviewer_name=reviewer_name, repo=repo)
+    else:
+        st.success("✅ No findings — rule checks and coverage analysis found no denial risk indicators.")
+
+
 def _render_ai_section(claim, claim_id: str, reviewer_name: str, repo: AuditRepository) -> None:
     """Render the AI Coverage Analysis button and its findings below rule results."""
     if not _AI_ENABLED:
@@ -329,6 +359,7 @@ def _clear_review_state() -> None:
         "findings", "risk", "reviewed_claim_id",
         "manual_reviewed", "manual_claim_dict",
         "ai_findings", "ai_reviewed",
+        "full_review_assessment", "full_review_claim_id", "full_review_claim_dict",
     ):
         st.session_state.pop(key, None)
 
@@ -404,6 +435,56 @@ def _load_worked_example() -> None:
         for field in ("cpt", "mod1", "mod2", "icd10_1", "icd10_2", "icd10_3", "icd10_4"):
             st.session_state[f"sl_{row_id}_{field}"] = line[field]
         st.session_state[f"sl_{row_id}_units"] = line.get("units", 1)
+
+
+def _collect_manual_claim_dict_or_errors() -> tuple[dict | None, list[str]]:
+    """
+    Build a claim_dict from manual-entry session state, validating along the way.
+
+    Returns (claim_dict, []) on success or (None, errors) on validation failure.
+    Shared by both the unified "Run Full Review" button and the rule-layer-only
+    "Review Claim" button so the same validation runs regardless of which is used.
+    """
+    header = {
+        "claim_id": st.session_state.get("manual_claim_id", "").strip(),
+        "payer_name": st.session_state.get("manual_payer_name", ""),
+        "payer_id": st.session_state.get("manual_payer_id", "").strip(),
+        "npi": st.session_state.get("manual_npi", "").strip(),
+        "provider_specialty": st.session_state.get("manual_specialty", "").strip(),
+        "note_text": st.session_state.get("manual_note_text", "").strip(),
+    }
+
+    lines = [
+        {
+            "cpt": st.session_state.get(f"sl_{row_id}_cpt", ""),
+            "mod1": st.session_state.get(f"sl_{row_id}_mod1", ""),
+            "mod2": st.session_state.get(f"sl_{row_id}_mod2", ""),
+            "units": st.session_state.get(f"sl_{row_id}_units", 1),
+            "icd10_1": st.session_state.get(f"sl_{row_id}_icd10_1", ""),
+            "icd10_2": st.session_state.get(f"sl_{row_id}_icd10_2", ""),
+            "icd10_3": st.session_state.get(f"sl_{row_id}_icd10_3", ""),
+            "icd10_4": st.session_state.get(f"sl_{row_id}_icd10_4", ""),
+        }
+        for row_id in st.session_state["manual_active_rows"]
+    ]
+
+    errors: list[str] = []
+    if not header["claim_id"]:
+        errors.append("Claim ID is required.")
+    payer_val = header["payer_name"]
+    if not payer_val or payer_val == _PAYER_PLACEHOLDER:
+        errors.append("Payer is required.")
+    npi_ok, npi_err = validate_npi(header["npi"])
+    if not npi_ok:
+        errors.append(f"NPI: {npi_err}")
+    cpts_entered = [normalize_code(l["cpt"]) for l in lines if l["cpt"].strip()]
+    if not cpts_entered:
+        errors.append("At least one CPT/HCPCS code is required.")
+
+    if errors:
+        return None, errors
+
+    return build_manual_claim(header, lines), []
 
 
 # ---------------------------------------------------------------------------
@@ -508,50 +589,37 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
 
     st.divider()
 
-    # ---- Review button ----
-    if st.button("🔍 Review Claim", type="primary", key="manual_review_btn"):
-        header = {
-            "claim_id": st.session_state.get("manual_claim_id", "").strip(),
-            "payer_name": st.session_state.get("manual_payer_name", ""),
-            "payer_id": st.session_state.get("manual_payer_id", "").strip(),
-            "npi": st.session_state.get("manual_npi", "").strip(),
-            "provider_specialty": st.session_state.get("manual_specialty", "").strip(),
-            "note_text": st.session_state.get("manual_note_text", "").strip(),
-        }
-
-        lines = [
-            {
-                "cpt": st.session_state.get(f"sl_{row_id}_cpt", ""),
-                "mod1": st.session_state.get(f"sl_{row_id}_mod1", ""),
-                "mod2": st.session_state.get(f"sl_{row_id}_mod2", ""),
-                "units": st.session_state.get(f"sl_{row_id}_units", 1),
-                "icd10_1": st.session_state.get(f"sl_{row_id}_icd10_1", ""),
-                "icd10_2": st.session_state.get(f"sl_{row_id}_icd10_2", ""),
-                "icd10_3": st.session_state.get(f"sl_{row_id}_icd10_3", ""),
-                "icd10_4": st.session_state.get(f"sl_{row_id}_icd10_4", ""),
-            }
-            for row_id in st.session_state["manual_active_rows"]
-        ]
-
-        errors: list[str] = []
-        if not header["claim_id"]:
-            errors.append("Claim ID is required.")
-        payer_val = header["payer_name"]
-        if not payer_val or payer_val == _PAYER_PLACEHOLDER:
-            errors.append("Payer is required.")
-        npi_ok, npi_err = validate_npi(header["npi"])
-        if not npi_ok:
-            errors.append(f"NPI: {npi_err}")
-        cpts_entered = [normalize_code(l["cpt"]) for l in lines if l["cpt"].strip()]
-        if not cpts_entered:
-            errors.append("At least one CPT/HCPCS code is required.")
-
+    # ---- Unified review button (recommended) ----
+    if st.button("🚀 Run Full Review", type="primary", key="manual_full_review_btn"):
+        claim_dict, errors = _collect_manual_claim_dict_or_errors()
         if errors:
             for err in errors:
                 st.error(err)
         else:
             _clear_review_state()
-            claim_dict = build_manual_claim(header, lines)
+            claim = load_claim(claim_dict)
+            st.session_state["full_review_assessment"] = run_review(claim)
+            st.session_state["full_review_claim_id"] = claim_dict["claim_id"]
+            st.session_state["full_review_claim_dict"] = claim_dict
+
+    if "full_review_assessment" in st.session_state and st.session_state.get("full_review_claim_dict"):
+        _render_full_review_results(
+            st.session_state["full_review_assessment"],
+            claim_id=st.session_state["full_review_claim_id"],
+            reviewer_name=reviewer_name,
+            repo=repo,
+        )
+
+    st.caption("or run checks separately:")
+
+    # ---- Review button (rule layer only) ----
+    if st.button("🔍 Review Claim (rule layer only)", key="manual_review_btn"):
+        claim_dict, errors = _collect_manual_claim_dict_or_errors()
+        if errors:
+            for err in errors:
+                st.error(err)
+        else:
+            _clear_review_state()
             claim = load_claim(claim_dict)
             findings = review_claim(claim)
             risk = overall_risk(findings)
@@ -623,7 +691,25 @@ def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
 
     st.divider()
 
-    if st.button("🔍 Review Claim", type="primary", key="sample_review_btn"):
+    if st.button("🚀 Run Full Review", type="primary", key="sample_full_review_btn"):
+        _clear_review_state()
+        claim = load_claim(claim_dict)
+        st.session_state["full_review_assessment"] = run_review(claim)
+        st.session_state["full_review_claim_id"] = claim_dict["claim_id"]
+
+    if (
+        "full_review_assessment" in st.session_state
+        and st.session_state.get("full_review_claim_id") == claim_dict["claim_id"]
+    ):
+        _render_full_review_results(
+            st.session_state["full_review_assessment"],
+            claim_id=claim_dict["claim_id"],
+            reviewer_name=reviewer_name,
+            repo=repo,
+        )
+
+    st.caption("or run checks separately:")
+    if st.button("🔍 Review Claim (rule layer only)", key="sample_review_btn"):
         _clear_review_state()
         claim = load_claim(claim_dict)
         findings = review_claim(claim)
