@@ -290,9 +290,12 @@ Build the data pipeline that fetches CMS coverage policies (LCDs and NCDs) and i
 - `tests/test_chunking.py`: 11 tests (single section, multi-section sequential indexing, long-section splitting, blank-section skip, missing-key validation, hard-split fallback)
 - No CMS API, no ChromaDB, no changes to `coverage_validation.py` or any agent — chunking only
 
-### Session 1B — Vector Store 🔜
-- `retrieval/vector_store.py`: ChromaDB wrapper with `index(chunks)` and `query(text, n_results, filters)`
-- `tests/test_vector_store.py` using `tmp_path` for an isolated ChromaDB instance per test
+### Session 1B — Vector Store ✅ Complete
+- `retrieval/vector_store.py`: `VectorStore` class wrapping a persistent ChromaDB collection; `index(chunks)` (idempotent upsert keyed on `document_id::chunk_index`), `query(text, n_results, filters)` (returns plain dicts, never ChromaDB's native `QueryResult`), `count()`
+- Constructed per `persist_directory` (no module-level singleton) so production and tests get fully isolated instances
+- `tests/test_vector_store.py`: 12 tests using `tmp_path` for an isolated ChromaDB instance per test — idempotent re-indexing, empty-index query returns `[]`, metadata fields needed for `Citation` construction are preserved, `where`-filter querying, cross-instance isolation
+- `chromadb` installed in `.venv` (was listed in `requirements.txt` but not previously installed); default embedding model (`all-MiniLM-L6-v2`) downloads once to `~/.cache/chroma` on first use
+- No CMS API, no real coverage data seeded, no changes to `coverage_validation.py` or `ingest.py`
 
 ### Session 1C — CMS Ingestion 🔜
 - `retrieval/ingest.py`: CMS Coverage API client; fetches LCDs, NCDs, and coverage articles; saves to `data/reference/coverage/` with metadata (document_id, title, effective_date, contractor)
