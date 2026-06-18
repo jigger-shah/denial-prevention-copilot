@@ -354,6 +354,25 @@ Add boundary validation in `load_claim()` for format checks (5-digit CPT, ICD-10
 
 ---
 
+#### TD-18: CMS Coverage API Field Names Unverified Against a Live Response
+
+**Description:** `retrieval/ingest.py:normalize_lcd/_ncd/_article()` map raw CMS Coverage API JSON fields (e.g. `lcd_id`, `indication_limitation`, `contractor_name`) into the internal document contract. These field names were determined from CMS API documentation and naming conventions, not from inspecting a real live response — outbound network access to `api.coverage.cms.gov` was unavailable in the development environment when this module was built (Phase 4, Session 1C).
+
+**Location:** `retrieval/ingest.py:_SECTION_FIELD_HEADINGS`, `normalize_lcd()`, `normalize_ncd()`, `normalize_article()`
+
+**Impact:**
+- If the real API uses different field names than assumed, `_extract_sections()` will silently produce zero sections for a real document (degrades gracefully — no crash — but produces no chunks, so no coverage findings for that document).
+- All 15 ingestion tests pass against mocked responses shaped to match the assumed schema, so they cannot catch a real schema mismatch.
+
+**Recommended Fix:**
+1. Once network access is available, call `fetch_lcd()`/`fetch_ncd()`/`fetch_article()` against one real document ID with `force_refresh=True` and inspect the raw response shape.
+2. Adjust `_first_present()` candidate field names and `_SECTION_FIELD_HEADINGS` to match.
+3. Add one integration test (marked to skip by default, like the NCCI real-file integration tests) that hits the live API once to catch future drift.
+
+**Planned Sprint:** Before Session 1D (Coverage Agent v2 swap) is demoed against real ingested data, or whenever live network access is available.
+
+---
+
 ## Debt Summary
 
 | Priority | Count | Resolved | Open |

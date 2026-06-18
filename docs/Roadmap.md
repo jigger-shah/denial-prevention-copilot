@@ -297,10 +297,12 @@ Build the data pipeline that fetches CMS coverage policies (LCDs and NCDs) and i
 - `chromadb` installed in `.venv` (was listed in `requirements.txt` but not previously installed); default embedding model (`all-MiniLM-L6-v2`) downloads once to `~/.cache/chroma` on first use
 - No CMS API, no real coverage data seeded, no changes to `coverage_validation.py` or `ingest.py`
 
-### Session 1C — CMS Ingestion 🔜
-- `retrieval/ingest.py`: CMS Coverage API client; fetches LCDs, NCDs, and coverage articles; saves to `data/reference/coverage/` with metadata (document_id, title, effective_date, contractor)
-- `scripts/ingest_coverage.py`
-- `tests/test_ingest.py` with mocked HTTP (no live API calls in tests)
+### Session 1C — CMS Ingestion ✅ Complete
+- `retrieval/ingest.py`: CMS Coverage API client (`fetch_lcd`, `fetch_ncd`, `fetch_article`) against `https://api.coverage.cms.gov`; normalizes responses into the `chunking.py` document contract; saves raw JSON to `data/reference/coverage/{type}_{id}.json`; local-cache-first with `force_refresh` override; retry/backoff (up to 3 attempts) on HTTP 429/5xx and connection errors; raises `CoverageAPIError` on non-retryable failures or retry exhaustion
+- `scripts/ingest_coverage.py`: CLI (`--type`, `--id`, `--output-dir`, `--force-refresh`, `--dry-run`)
+- `tests/test_ingest.py`: 15 tests with mocked `requests.get` (no live API calls) — success paths for LCD/NCD/Article, cache-hit skips network, force-refresh bypasses cache, 404 and connection-error handling, 429 retry-then-succeed and retry-exhaustion, missing-field defaults, raw JSON shape, CLI dry-run/success/error paths
+- `data/reference/coverage/` added to `.gitignore` — raw CMS downloads are not committed, same pattern as `data/reference/ncci/`
+- **Field-name caveat:** the CMS Coverage API's exact response schema could not be verified against a live call from this environment (outbound network restricted). `normalize_lcd/_ncd/_article()` check multiple plausible field names per CMS documentation conventions and default missing fields gracefully; this needs verification against one real API response before being relied on for an actual demo (see TD-18)
 
 ### Session 1D — Coverage Agent v2 Swap 🔜
 - `agents/coverage_validation.py`: query `vector_store` first, fall back to JSON `policy_repository` if ChromaDB is empty

@@ -189,6 +189,9 @@ data/reference/*.txt
 # Project-specific: ChromaDB vector store persistence
 retrieval/chroma_db/
 
+# Project-specific: raw CMS Coverage API downloads (fetched by retrieval/ingest.py)
+data/reference/coverage/
+
 # Project-specific: SQLite audit database
 *.db
 *.sqlite
