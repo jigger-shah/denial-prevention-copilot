@@ -640,6 +640,49 @@ Before writing the swap, live calls were made against `api.coverage.cms.gov` to 
 
 ---
 
+## ADR-014: Sentence-Aware Chunking and Defensive Excerpt Cleanup
+
+**Status:** Decided — implemented
+**Decided:** Phase 4, Session 1D follow-up
+
+### Context
+
+ADR-013 made the vector path live, but it was only validated against mocked retrieval results — no real ChromaDB index had been seeded and queried end-to-end with a real Anthropic call. Doing that validation (seeding 2 real CMS documents: LCD 33431 "HbA1c", NCD 98 "Blood Glucose Testing") surfaced a real bug: `retrieval/chunking.py`'s fallback for a single paragraph exceeding `max_chunk_chars` (the common case for CMS LCD/NCD text, which is typically one long unbroken paragraph) cut text at a fixed character offset. For LCD 33431 this produced a chunk reading `"). This NCD lists the ICD-10 codes for HbA1c..."` — and because `agents/coverage_validation.py` feeds the full chunk text to the model verbatim as "the policy text" for it to quote from, the model naturally echoed that fragment into `citation_excerpt`, surfacing a broken-looking quote directly in the UI.
+
+### Decision
+
+Two independent fixes, addressing chunk-quality at the source and citation-quality as a backstop:
+
+1. **`retrieval/chunking.py`**: replaced the character-offset hard split with `_split_long_paragraph()` — a sentence-boundary-aware splitter that packs whole sentences into each piece, only falling back to a hard character split if a single sentence alone exceeds `max_chunk_chars` (rare). Added defensive, idempotent HTML-entity unescape + tag stripping (`_clean_entities()`) and post-split cleanup (`_finalize_piece()`) that collapses stray whitespace and strips any leading dangling closing-punctuation/quote character. Exposed `starts_with_dangling_fragment()` and `trim_leading_fragment()` as public functions so other modules share one definition of "looks like a mid-sentence cut."
+2. **`agents/coverage_validation.py`**: added `_clean_citation_excerpt()`, used when constructing `Citation.excerpt` in `_parse_response()`. If the model's own `citation_excerpt` is empty or starts with a dangling fragment character, falls back to `_sentence_snippet()` — a cleaned, sentence-bounded snippet of the actual retrieved chunk (`policy["excerpt"]`) the model was grounded in. This is deliberately a second, independent line of defense: even with clean chunking, a model can still produce a fragment on its own (paraphrase artifact, truncated quote), and this catches that case regardless of root cause.
+
+### Rationale
+
+**Fix the data, then guard the boundary.** The chunking fix addresses the actual root cause (most LCD/NCD text has no paragraph breaks at all, so the "rare hard-split fallback" was actually the common path for real CMS text). The excerpt-cleanup fix in the agent is defense in depth — it doesn't assume chunking is the only place a fragment can originate, since model output is inherently non-deterministic and outside this codebase's control.
+
+**Shared, public fragment-detection logic.** `starts_with_dangling_fragment()`/`trim_leading_fragment()` live in `retrieval/chunking.py` (where the concept originates structurally) and are imported by `coverage_validation.py` rather than each module defining its own punctuation set — one definition of "dangling" can't drift between the two call sites.
+
+**Fallback to the chunk, not to nothing.** When `_clean_citation_excerpt()` rejects the model's excerpt, it falls back to a snippet of the real retrieved text rather than an empty string — the citation should always have *some* supporting text when a chunk was actually retrieved, even if the model's own quoting attempt was bad.
+
+### Alternatives considered
+
+| Option | Reason not chosen |
+|---|---|
+| Only fix chunking, no agent-side guard | Doesn't protect against the model itself producing a fragment independent of chunk quality (paraphrase artifacts, truncated quotes) |
+| Only add the agent-side guard, leave chunking's hard character split as-is | Treats the symptom, not the cause — every newly ingested long-paragraph document would keep producing fragment chunks fed to the model, relying entirely on the fallback to mask it |
+| Reject the model's finding entirely if its excerpt looks like a fragment (no fallback) | Throws away an otherwise-valid finding (correct doc_id, correct grounding) over a cosmetic excerpt issue — worse for recall with no governance benefit, since citation grounding (doc_id-based) is unaffected either way |
+
+### Validation
+
+Re-chunked and re-indexed the two already-cached documents (no new network calls, no new documents — `scripts/ingest_coverage.py` was not re-run) with the fixed chunker: 7 chunks → 8, none starting with dangling punctuation. Ran one live `validate_coverage()` call against Scenario A's codes (CPT 80053/83036, ICD-10 Z00.00) end-to-end through the real vector store and a real Anthropic call: citation grounded to the real CMS doc (33431), excerpt read as a complete sentence, citation grounding still passed. 12 new tests (6 in `tests/test_chunking.py`, 6 in `tests/test_coverage_validation.py`) cover entity/tag cleanup, dangling-fragment detection, sentence-boundary splitting, and the excerpt-cleanup fallback (clean-excerpt-unchanged, dangling-excerpt-replaced, empty-excerpt-replaced, no-fallback-available, plus a vector-sourced grounding regression test using the exact production fragment string).
+
+### Implications
+
+- `retrieval/chunking.py` now does its own defensive HTML cleanup, redundant with (but independent of) `retrieval/ingest.py:_clean_html()` — intentional, since `chunk_document()` may someday receive text from a source other than `ingest.py`.
+- This investigation also surfaced two debt items documented separately: TD-21 (a long-lived `VectorStore` singleton doesn't see a re-index performed by a separate process — requires an app restart) and TD-20 (raw model tool-call output and `Citation.excerpt` are never persisted, so a saved decision's literal excerpt can't be reconstructed after the fact). Neither was fixed as part of this ADR.
+
+---
+
 ## Tradeoffs Summary
 
 | Decision | Speed | Correctness | Explainability | Future-Proofing |

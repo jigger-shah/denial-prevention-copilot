@@ -387,15 +387,54 @@ All three `fetch_*()` functions were re-run live end-to-end through `chunk_docum
 
 ---
 
+#### TD-20: Raw AI Tool-Call Payloads and `citation_excerpt` Are Not Persisted
+
+**Description:** Discovered while tracing a citation-excerpt question back through the pipeline (Phase 4, post-Session 1D). `db/audit_repository.py`'s `audit_decisions` table has no `citation_excerpt` column, and no module logs the raw Anthropic tool-call response (`report_coverage_finding`'s full `input` dict) anywhere — not to the audit log, not to `logger`, not to any file. Once a decision is saved, the `Citation.excerpt` text the reviewer actually saw is gone; it cannot be reconstructed from the database, only re-derived (approximately) by re-running retrieval against the same codes and guessing which sentence the model might have quoted.
+
+**Location:** `db/audit_repository.py` (schema has no excerpt column), `agents/coverage_validation.py:_parse_response()` (constructs but never logs the raw tool-call `args` dict).
+
+**Impact:**
+- Cannot audit, in retrospect, exactly what supporting text the model cited for a given saved decision — only the doc_id/section/effective_date survive, not the excerpt itself.
+- Investigating a disputed or confusing finding after the fact requires re-running the agent and hoping retrieval + model sampling reproduce the same excerpt; they may not, since `_clean_citation_excerpt()`'s fallback path and model sampling variance both mean two runs against the same chunk can legitimately choose different (both valid) supporting sentences.
+- Related to, but distinct from, TD-16 (no application logging generally) — this is specifically about a governance/citation-integrity gap, not just missing debug logs: the "no citation → no finding" rule's evidentiary trail is incomplete once persisted.
+
+**Recommended Fix:**
+1. Add a `citation_excerpt` column to `audit_decisions` (with a backward-compatible `ALTER TABLE` migration, following the same pattern used for `citation_effective_date` in `initialize_database()`).
+2. Pass `finding.citation.excerpt` through to `save_decision()` and persist it.
+3. Optionally, log the raw tool-call `args` dict at DEBUG level in `_parse_response()` (ties into TD-16) for cases where even more than the final excerpt is needed for debugging.
+
+**Planned Sprint:** Unscheduled — low effort (one column + one migration), worth doing whenever `db/audit_repository.py` is next touched.
+
+---
+
+#### TD-21: `VectorStore` Singleton Goes Stale If the Index Is Re-Built by a Separate Process
+
+**Description:** Discovered while diagnosing why a freshly-seeded ChromaDB index still produced JSON-fallback citations in the running app (post-Session 1D). `agents/coverage_validation.py:_get_vector_store()` caches a single `VectorStore` instance for the lifetime of the Python process (`_vector_store_instance`). If that instance is constructed against an empty collection (no HNSW vector-index segment on disk yet) and a *separate* process later writes chunks into the same `retrieval/chroma_db/` directory, the original process's collection handle does not pick up the new segment. `count()` correctly reflects the new on-disk row count (a simple read), but `query()` raises `chromadb.errors.InternalError: Error executing plan: Internal error: Error creating hnsw segment reader: Nothing found on disk`. `_retrieve_from_vector_store()`'s broad `except Exception` catches this, logs a warning, and silently falls back to JSON — so the symptom looks like "the vector path isn't working" rather than a clear error.
+
+**Location:** `agents/coverage_validation.py:_get_vector_store()`, `_vector_store_instance` module-level singleton; root behavior is inside `chromadb`'s embedded HNSW segment implementation, not this codebase.
+
+**Impact:**
+- After running `scripts/ingest_coverage.py` + chunking + indexing while the Streamlit app is already running, the app must be **manually restarted** to see the newly seeded documents — there is no in-app way to refresh the vector store.
+- The failure mode is silent: the UI just keeps showing JSON-sourced citations with no visible error, since the exception is caught and logged (not surfaced to the UI) by design (consistent with the project's "infrastructure failure never blocks review" pattern — see ADR-013).
+- Reproduced and confirmed in an isolated `/tmp` experiment: a `VectorStore` handle built against an empty collection, then a second process indexes data, then the *original* handle's `query()` fails with the exact same error message captured live in the running app's log.
+
+**Recommended Fix:**
+1. Operational (no code change): always restart the Streamlit process after running ingestion/indexing. Document this in a short runbook note (README or Roadmap).
+2. Code-level: in `_retrieve_from_vector_store()`, catch this specific error (or any `query()` exception) and retry once against a freshly-constructed `VectorStore` (reset `_vector_store_instance = None`, rebuild, retry `query()`) before falling back to JSON — so a long-running process self-heals after an out-of-process re-index instead of requiring a manual restart.
+
+**Planned Sprint:** Unscheduled — operational workaround (restart) is sufficient for the portfolio/demo use case; the self-healing retry is a nice-to-have if this app is ever deployed somewhere restarts aren't trivial (e.g. Streamlit Cloud with a long-lived session).
+
+---
+
 ## Debt Summary
 
 | Priority | Count | Resolved | Open |
 |---|---|---|---|
 | High | 11 | 11 (R1–R5, TD-01, TD-02, TD-03, TD-05, TD-08 partial, TD-18) | 1 (TD-04, TD-06 — see note) |
-| Medium | 7 | 3 (TD-07, TD-07b, TD-08 remainder partial) | 4 (TD-07a, TD-09, TD-10, TD-11, TD-12) |
-| Low | 6 | 1 (TD-17) | 5 (TD-13, TD-14, TD-15, TD-16, TD-19) |
+| Medium | 8 | 3 (TD-07, TD-07b, TD-08 remainder partial) | 5 (TD-07a, TD-09, TD-10, TD-11, TD-12, TD-21) |
+| Low | 7 | 1 (TD-17) | 6 (TD-13, TD-14, TD-15, TD-16, TD-19, TD-20) |
 | Sprint 3 additions | 3 | 3 | 0 |
-| **Total** | **27** | **18** | **9** |
+| **Total** | **29** | **18** | **11** |
 
 Note: TD-04 (most LLM agents still stubs) and TD-06 (two hardcoded code validity rules) remain open High items — both counted once but listed together since neither was touched this phase.
 
@@ -420,3 +459,10 @@ The remaining open High items (TD-04, TD-05, TD-06) represent the core gap: LLM 
 **Sprint 8 note:** UI/UX hardening. (1) `rules/rule_engine.py` now exports `CHECKS_RUN: list[str]` — a human-readable list of all 5 active checks in execution order, consumed by the UI. (2) `app/main.py` updated: checks-run caption now always visible after review (not just on CLEAN claims); NPI short-circuit detected and surfaced as `"⚡ NPI short-circuit"` message; sample-mode NPI blank now shows "Not provided" instead of empty field; sample-mode Review Claim button now has an explicit `key`; NPI field `help` text clarifies that Luhn runs at review time. (3) `.streamlit/config.toml` created with `primaryColor = "#1d4ed8"` — Review Claim button now renders blue (neutral primary action) instead of the Streamlit default red. (4) 3 new tests in `test_rule_engine.py` covering CHECKS_RUN structure, rule coverage, and NPI short-circuit engine behavior. Total tests: 186 passing.
 
 **Phase 4 Session 1D note:** Coverage Agent v2 retrieval swap. Before coding, made live calls against `api.coverage.cms.gov` to validate the TD-18 field-name assumptions from Session 1C — found and fixed a real bug (responses are wrapped in a `{"meta", "data": [...]}` envelope, not flat dicts), corrected all three endpoint URLs, added the previously-missing Bearer token flow for LCD/Article, corrected every guessed field name against live records, and added double-HTML-entity cleanup. TD-18 resolved; new TD-19 opened for the (low-priority, display-only) contractor-name gap. `agents/coverage_validation.py` now queries `vector_store` first (`_retrieve_from_vector_store()`), falling back to the JSON `policy_repository` (`_retrieve_from_json_fallback()`) when the vector store is empty, returns nothing, or raises — `_retrieve_policies()` is the single entry point encoding that order. Tool schema, citation grounding, audit workflow, and UI are unchanged; all coverage-agent tests mock `_get_vector_store()` so no real ChromaDB is touched. TD-05 (ChromaDB RAG pipeline not built) resolved — all 5 of its original fix steps are now implemented across Sessions 1A–1D, though the index is not pre-seeded with a real corpus (intentionally, per the session's no-bulk-download constraint), so the JSON fallback remains the active path until someone runs ingestion against a real set of LCDs/NCDs. 24 tests in `test_coverage_validation.py` (up from 14), 17 in `test_ingest.py` (rewritten from 15 against the corrected schema). Total tests: 277 passing.
+
+**Phase 4 Session 1D follow-up note (excerpt cleanup + live validation):** After Session 1D shipped, seeded a minimal real corpus (2 documents — LCD 33431 "HbA1c", NCD 98 "Blood Glucose Testing" — fetched live, not committed; `data/reference/coverage/` and `retrieval/chroma_db/` are both gitignored, so this seeded state is local-only and a fresh clone starts with an empty index) to validate the vector path end-to-end with a real Anthropic call. This surfaced two real bugs, both fixed:
+
+1. **Dangling-fragment chunk boundaries.** `retrieval/chunking.py`'s long-paragraph fallback cut text at a fixed character offset rather than a sentence boundary, producing chunks like `"). This NCD lists the ICD-10 codes..."`. Fixed by replacing the hard character split with sentence-boundary-aware splitting (`_split_long_paragraph()`), plus defensive entity/tag cleanup and post-split trimming of any leading dangling punctuation/quote (`starts_with_dangling_fragment()`, `trim_leading_fragment()`, now public). `agents/coverage_validation.py` also gained `_clean_citation_excerpt()` as a second line of defense: if the model's own `citation_excerpt` still starts with a dangling fragment, it falls back to a cleaned, sentence-bounded snippet of the actual retrieved chunk rather than surfacing the fragment. 12 new tests (6 in `test_chunking.py`, 6 in `test_coverage_validation.py`). Total tests: 289 passing. Committed as `b92e8d7`.
+2. **Stale `VectorStore` singleton after external re-indexing** (TD-21, new). Diagnosed by reproducing the exact `"Error creating hnsw segment reader: Nothing found on disk"` error in an isolated experiment and confirming it matched the running app's own log output. Root cause: the Streamlit process's cached `_vector_store_instance` was constructed against an empty collection before a separate process seeded it; ChromaDB's embedded HNSW reader doesn't pick up segments written after the handle was created. Workaround applied: restart the Streamlit process after running ingestion/indexing. No code fix applied this round — tracked as TD-21 with a self-healing-retry option for later.
+
+Separately investigated (no bug found): traced why two different live runs displayed two different sentences from the same retrieved chunk as `citation_excerpt` — confirmed this is the model selecting a sub-span of the full chunk it was given (intended tool-use behavior, the schema asks for a supporting excerpt, not the whole chunk), not truncation in chunking, retrieval, or cleanup. This investigation surfaced TD-20 (raw tool-call payloads and `citation_excerpt` are never persisted, so a saved decision's literal excerpt can't be reconstructed after the fact).

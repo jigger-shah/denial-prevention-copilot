@@ -312,6 +312,12 @@ Build the data pipeline that fetches CMS coverage policies (LCDs and NCDs) and i
 - 24 tests in `tests/test_coverage_validation.py` (up from 14) using a `MagicMock` for `_get_vector_store()` — no real ChromaDB or Anthropic calls
 - **ChromaDB index is not pre-seeded.** A fresh checkout's vector store is empty, so every claim review uses the JSON fallback until someone runs `scripts/ingest_coverage.py` + chunking + indexing for a real set of documents (intentionally out of scope for this phase — no bulk download, no large seeded corpus)
 
+### Session 1D Follow-Up — Excerpt Quality Fix + Live Validation ✅ Complete
+- Seeded a minimal real corpus (2 documents: LCD 33431 "HbA1c", NCD 98 "Blood Glucose Testing") to validate the vector path end-to-end with a real Anthropic call. **Local-only** — `data/reference/coverage/` and `retrieval/chroma_db/` are gitignored, so a fresh clone always starts with an empty index and JSON-fallback behavior, regardless of what's seeded on any one machine.
+- Found and fixed a real bug: `retrieval/chunking.py`'s long-paragraph fallback cut text at a fixed character offset, not a sentence boundary, producing citation excerpts like `"). This NCD lists the ICD-10 codes..."`. Replaced with sentence-boundary-aware splitting (`_split_long_paragraph()`) plus defensive entity/tag cleanup and leading-fragment trimming (`starts_with_dangling_fragment()`, `trim_leading_fragment()`, now public). `agents/coverage_validation.py` gained `_clean_citation_excerpt()` as a second line of defense against the model itself echoing a fragment. 12 new tests; total 289 passing. Committed as `b92e8d7`.
+- **Operational note:** ChromaDB's embedded HNSW index does not refresh in a long-lived process after a *separate* process re-indexes the same `retrieval/chroma_db/` directory — `query()` raises `"Error creating hnsw segment reader: Nothing found on disk"`, silently caught and routed to the JSON fallback. **Restart the Streamlit process after running ingestion/indexing** to pick up newly seeded documents. Tracked as TD-21 (self-healing retry is a possible future fix, not implemented).
+- See `docs/Architecture_Decisions.md` ADR-014 and `docs/Technical_Debt_Register.md` TD-20/TD-21 for full detail.
+
 ### Dependencies
 - Phase 3 complete (code validity and NPI checks ensure the claim reaching the agent layer is deterministically clean first)
 - CMS Coverage API access (free, no authentication required) — needed starting Session 1C
