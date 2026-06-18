@@ -278,23 +278,34 @@ Replace all hardcoded rule data with real CMS reference files. Add NPI live vali
 
 ## Phase 4 — LCD/NCD Retrieval Pipeline
 
-**Status:** Future  
-**Estimated scope:** 2–3 implementation sessions
+**Status:** In progress — split into sub-sessions to avoid stacking multiple unverified layers at once
+**Estimated scope:** 4 implementation sessions (1A–1D)
 
 ### Objectives
-Build the data pipeline that fetches CMS coverage policies (LCDs and NCDs) and indexes them for semantic retrieval. This phase produces no visible UI changes — it creates the data foundation that Phase 5 depends on.
+Build the data pipeline that fetches CMS coverage policies (LCDs and NCDs) and indexes them for semantic retrieval. This phase produces no visible UI changes until 1D — it creates the data foundation that Phase 5 depends on.
 
-### Deliverables
+### Session 1A — Chunking ✅ Complete
+- `retrieval/chunking.py`: `chunk_document()` — section-aware splitting that keeps policy sections (Indications, Limitations, Covered Diagnoses, Documentation Requirements) intact; each chunk carries `document_id`, `document_title`, `section_heading`, `effective_date`, `chunk_index`
+- Long sections split on paragraph boundaries via `_split_section_text()`; hard character split as a fallback for a single paragraph exceeding `max_chunk_chars`
+- `tests/test_chunking.py`: 11 tests (single section, multi-section sequential indexing, long-section splitting, blank-section skip, missing-key validation, hard-split fallback)
+- No CMS API, no ChromaDB, no changes to `coverage_validation.py` or any agent — chunking only
+
+### Session 1B — Vector Store 🔜
+- `retrieval/vector_store.py`: ChromaDB wrapper with `index(chunks)` and `query(text, n_results, filters)`
+- `tests/test_vector_store.py` using `tmp_path` for an isolated ChromaDB instance per test
+
+### Session 1C — CMS Ingestion 🔜
 - `retrieval/ingest.py`: CMS Coverage API client; fetches LCDs, NCDs, and coverage articles; saves to `data/reference/coverage/` with metadata (document_id, title, effective_date, contractor)
-- `retrieval/chunking.py`: section-aware splitting that keeps policy sections (Indications, Limitations, Covered Diagnoses, Documentation Requirements) intact; each chunk carries `document_id`, `section_heading`, `effective_date`, `chunk_index`
-- `retrieval/vector_store.py`: ChromaDB wrapper with `index(chunks)` and `query(text, n_results, filters)`; default to built-in embedding function; idempotent re-indexing via `document_id + chunk_index` as ChromaDB document ID
-- Ingestion script: `scripts/ingest_coverage.py` or a Streamlit admin panel button
-- `data/reference/coverage/` populated with at least one LCD covering a common Medicare scenario (e.g., LCD for metabolic panel, L35025 or equivalent)
-- `retrieval/chroma_db/` directory created and gitignored
+- `scripts/ingest_coverage.py`
+- `tests/test_ingest.py` with mocked HTTP (no live API calls in tests)
+
+### Session 1D — Coverage Agent v2 Swap 🔜
+- `agents/coverage_validation.py`: query `vector_store` first, fall back to JSON `policy_repository` if ChromaDB is empty
+- Preserves existing UI and audit workflow; only the retrieval call changes
 
 ### Dependencies
 - Phase 3 complete (code validity and NPI checks ensure the claim reaching the agent layer is deterministically clean first)
-- CMS Coverage API access (free, no authentication required)
+- CMS Coverage API access (free, no authentication required) — needed starting Session 1C
 
 ### Success Criteria
 - `vector_store.query("Z00.00 encounter for general adult medical examination", n_results=5)` returns at least one LCD chunk with a verifiable `effective_date`
