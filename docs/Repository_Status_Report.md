@@ -10,6 +10,10 @@
 > **Update (Phase 7, Unified Review, post-2026-06-18):** This report also predates Phase 7. `agents/orchestrator.py` and `agents/denial_prevention.py` are no longer stubs — both are implemented against a deliberately **light** scope: combine the rule layer and the Coverage Validation Agent (the only implemented LLM agent) into one `RiskAssessment`. This report's "Gap 5" and the PRD Traceability Matrix's "Orchestrator (parallel agents)" / "Denial prevention synthesis" rows describing these as "Not Started" are now stale — see `docs/Roadmap.md` Phase 7 and `docs/Technical_Debt_Register.md` TD-04 (partially resolved) for current detail. **Documentation Review Agent remains not implemented** — it is explicitly deferred ("Deferred / Under Evaluation" in the roadmap, not removed from the product vision, to be revisited before public release), and no placeholder finding stands in for it. Coding Validation is not planned as a separate LLM agent at all (see ADR-015) — the rule layer's NCCI/MUE/code_validity checks already cover that ground deterministically. Current MVP scope is: Unified Review (rule layer + Coverage Validation Agent → RiskAssessment) + human-in-the-loop audit. 308 tests passing (up from the 200 referenced below).
 >
 > **Update (v1.3, Coding Validation Agent, post-2026-06-18):** ADR-015's "Coding Validation is not planned as a separate LLM agent" framing (referenced in the update above) is now superseded — see `docs/Architecture_Decisions.md` ADR-016. `agents/coding_validation.py` is implemented, mirroring the Coverage Validation Agent's architecture and scoped narrowly to coding defensibility judgment the rule layer cannot make (diagnosis specificity, diagnosis-to-procedure support, payer scrutiny risk) — it does not re-implement NCCI/MUE/modifier/code-validity checks. The orchestrator now calls Coverage Validation then Coding Validation sequentially, and `denial_prevention.synthesize()` combines all three finding sources into one `RiskAssessment`. Documentation Review Agent remains the only deferred agent. Current MVP scope is: Unified Review (rule layer + Coverage Validation Agent + Coding Validation Agent → RiskAssessment) + human-in-the-loop audit. 349 tests passing (up from 308).
+>
+> **Update (v1.4, Golden Set Evaluation Framework, post-2026-06-18):** "Gap 6: Evaluation Framework (Phase 8)" below is now stale. `evaluation/golden_claims.json` (14 labeled synthetic claims), `evaluation/metrics.py`, `evaluation/harness.py`, and `evaluation/run_evaluation.py` implement the golden-set measurement the PRD's ≥90%/≥85% targets require — built as a standalone CLI module rather than a `pytest -m golden` marker (see `docs/Roadmap.md` Phase 8 "Deviation from original plan"). Offline (rule layer only, no API calls): 1.00 precision / 1.00 recall / 1.00 F1. Live (real `claude-haiku-4-5` calls): Rule Engine still 1.00/1.00/1.00; Coverage/Coding Agents 0.30/0.25 precision at 1.00 recall — tracked as `docs/Technical_Debt_Register.md` TD-24 (open). 375 tests passing (up from 349).
+>
+> **Update (v1.5, ICD-10 Expansion, post-2026-06-19):** The "ICD-10-CM code validity" row in the PRD Traceability Matrix below, and "Gap 1"'s ICD-10-CM bullet, are now stale. `rules/icd10_loader.py` (file-backed parser for the real CMS ICD-10-CM FY2026 order file, ~98,000 codes, gitignored like NCCI/MUE) and `rules/icd10.py` (`check_icd10_validity()` — `icd10_invalid` HIGH finding for codes not in the dataset, `icd10_unspecified` MEDIUM finding for codes whose CMS description contains "unspecified") are now wired into `rules/rule_engine.py`, respecting the existing HIGH-NPI short-circuit. The pre-existing `dx_procedure_conflict`/`missing_modifier_25` rules in `rules/code_validity.py` were left untouched — this is a new, separate check, not a replacement of those two rules. Two golden claims (`GOLD-009`, `GOLD-011`) needed their `expected_findings` updated since their diagnosis codes (`J06.9`, `R10.9`) are themselves unspecified per CMS; Rule Engine offline precision/recall/F1 remains 1.00/1.00/1.00. See `docs/Roadmap.md` Phase 8.5. 404 tests passing (up from 375).
 
 ---
 
@@ -388,7 +392,7 @@ Two-tool schema: `report_coverage_finding` (issue, recommendation, severity, con
 | NCCI PTP bundling check | P0 | Complete | `rules/ncci.py` + `rules/ncci_loader.py`: ~1.73M active pairs from CMS xlsx (v322r0, effective 2026-07-01); synthetic fallback documented |
 | MUE limit enforcement | P0 | Complete (synthetic fallback) | `rules/mue_loader.py` + `rules/mue.py`: file-backed loader; MAI-aware severity; synthetic fallback; CMS file needed in `data/reference/mue/` for authoritative limits |
 | NPI validation | P0 | Complete | `rules/npi.py`: Luhn check + NPPES live lookup; HIGH/MEDIUM/no-finding paths; short-circuit on HIGH; NPPES timeout silenced |
-| ICD-10-CM code validity | P0 | Partial | `rules/code_validity.py`: 2 hardcoded rules; no reference file loaded |
+| ICD-10-CM code validity | P0 | Complete (v1.5) | `rules/icd10_loader.py` + `rules/icd10.py`: real CMS FY2026 order file (~98,000 codes); invalid-code (HIGH) and unspecified-diagnosis (MEDIUM) findings; synthetic fallback. `rules/code_validity.py`'s 2 hardcoded dx-procedure/modifier-25 rules are unchanged and unrelated. |
 | HCPCS/CPT code validity | P0 | Partial | Same file; no CPT crosswalk loaded |
 | Coverage validation agent (RAG + LLM) | P0 | Partial (v1+) | `agents/coverage_validation.py`: implemented; JSON-backed retrieval (18 LCD/NCD entries after Sprint 10); structured tool use; citation grounding enforced; 6 demo scenarios validated; ChromaDB RAG upgrade deferred |
 | Documentation review agent | P0 | Not Started | `agents/documentation_review.py`: docstring only |
@@ -427,7 +431,8 @@ NCCI PTP edits are now real (Sprint 5). The remaining deterministic layer gaps a
 
 - **MUE tables:** ✅ Implemented in Sprint 6. `rules/mue_loader.py` + `rules/mue.py`. File-backed with synthetic fallback. CMS MUE Practitioner file needed in `data/reference/mue/` for authoritative limits.
 - **NPI validation:** ✅ Complete in Sprint 7. `rules/npi.py` with Luhn check and NPPES live lookup.
-- **ICD-10-CM and CPT reference files:** `rules/code_validity.py` has 2 hardcoded rules. Need FY2026 ICD-10-CM reference data and CPT crosswalk loaded from `data/reference/`.
+- **ICD-10-CM reference file:** ✅ Implemented in v1.5. `rules/icd10_loader.py` + `rules/icd10.py`, backed by the real CMS FY2026 ICD-10-CM order file in `data/reference/icd10/`. `rules/code_validity.py`'s 2 hardcoded dx-procedure/modifier-25 rules remain as-is (separate concern).
+- **CPT reference file:** Still pending — no CPT crosswalk loaded from `data/reference/`.
 
 ### Gap 2: LCD/NCD Retrieval Pipeline — ChromaDB (Phase 4)
 
@@ -454,9 +459,9 @@ The coverage validation agent requires a working RAG layer for real CMS LCD/NCD 
 
 The `RiskAssessment` Pydantic model in `db/schema.py` is a stub (DEFER-003). The orchestrator multi-table audit schema is deferred (DEFER-004).
 
-### Gap 6: Evaluation Framework (Phase 8)
+### Gap 6: Evaluation Framework (Phase 8) — ✅ Resolved in v1.4
 
-No golden set exists. `tests/test_rules.py` and `tests/test_orchestrator.py` are stubs. The PRD requires ≥90% precision and ≥85% recall — these targets cannot be measured until the agent layer exists and a labeled claim corpus is created.
+`evaluation/golden_claims.json` (14 labeled claims), `evaluation/metrics.py`, `evaluation/harness.py`, `evaluation/run_evaluation.py` measure precision/recall/F1 against the PRD's ≥90%/≥85% targets. Offline (rule layer): 1.00/1.00/1.00. Live (agent layer): 0.30/0.25 precision at 1.00 recall — open as TD-24, not a harness gap. See `docs/Roadmap.md` Phase 8.
 
 ### Gap 7: Deployment (Phases 9–10)
 

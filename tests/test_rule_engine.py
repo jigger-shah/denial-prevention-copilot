@@ -140,9 +140,12 @@ def test_clean_claim_returns_no_high_severity_findings():
 
 
 def test_clean_claim_overall_risk_is_clean():
+    """Uses J02.0 (Streptococcal pharyngitis) rather than the default J06.9 —
+    J06.9 itself is an unspecified diagnosis, so it now legitimately raises a
+    MEDIUM icd10_unspecified finding (see tests/test_icd10.py)."""
     claim = load_claim(_make_claim(
         cpt_codes=["99213", "85025"],
-        icd10_codes=["J06.9"],
+        icd10_codes=["J02.0"],
     ))
     findings = review_claim(claim)
     assert overall_risk(findings) == "CLEAN"

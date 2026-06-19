@@ -2,7 +2,7 @@
 ## Denial Prevention Copilot
 
 **Last updated:** June 2026
-**Scope:** All known technical debt as of v1.4 (Golden Set Evaluation Framework — `evaluation/` implemented, 375 tests passing) plus v1.2 UI validation findings
+**Scope:** All known technical debt as of v1.5 (ICD-10 Expansion — `rules/icd10_loader.py`/`rules/icd10.py` implemented, 404 tests passing) plus v1.2 UI validation findings
 
 Priority definitions:
 - **High** — blocks a P0 PRD requirement, a core demo scenario, or correct audit behavior
@@ -124,7 +124,7 @@ Behavior: empty NPI → no finding (optional field); non-numeric or wrong length
 
 ---
 
-#### TD-06: Two Hardcoded Code Validity Rules (No Reference Files)
+#### TD-06: Two Hardcoded Code Validity Rules (No Reference Files) — Partially Resolved (v1.5)
 
 **Description:** `rules/code_validity.py` has two hardcoded rule tables: one ICD-10 conflict rule (Z00.00 vs. problem E/M) and one modifier rule (missing modifier 25). The production path requires loading from ICD-10-CM reference files and the NCCI Policy Manual.
 
@@ -136,12 +136,12 @@ Behavior: empty NPI → no finding (optional field); non-numeric or wrong length
 - `HCPCS Level II` validity (is this a real HCPCS code?) is not implemented.
 
 **Recommended Fix:**
-1. Load ICD-10-CM reference data from `data/reference/icd10cm_<FY>.csv` — replace `_load_dx_procedure_rules()` loader.
-2. Load modifier rules from the NCCI Policy Manual guidance — expand `_load_modifier_rules()`.
-3. Implement a HCPCS Level II validity check using the quarterly CMS HCPCS file.
-4. Keep the public interface (`check_code_validity(claim)`) unchanged.
+1. ~~Load ICD-10-CM reference data — replace `_load_dx_procedure_rules()` loader.~~ ✅ Resolved differently in v1.5: rather than rewriting `_load_dx_procedure_rules()` itself, a real CMS ICD-10-CM dataset now backs a separate, additive check (`rules/icd10_loader.py` + `rules/icd10.py` — code existence + unspecified-diagnosis detection). The two hardcoded rules in `code_validity.py` (Z00.00 dx-procedure conflict, missing modifier 25) are untouched and still only cover those two specific scenarios.
+2. Load modifier rules from the NCCI Policy Manual guidance — expand `_load_modifier_rules()`. Still open.
+3. Implement a HCPCS Level II validity check using the quarterly CMS HCPCS file. Still open.
+4. Keep the public interface (`check_code_validity(claim)`) unchanged. N/A — `check_icd10_validity()` was added as a new function in a new module instead, called directly from `rule_engine.py`; `check_code_validity()`'s interface is unchanged.
 
-**Planned Sprint:** Phase 3 — Complete Deterministic Layer
+**Planned Sprint:** Phase 3 — Complete Deterministic Layer (ICD-10 dataset piece delivered in Phase 8.5 / v1.5; modifier expansion and HCPCS validity remain open)
 
 ---
 
@@ -452,17 +452,31 @@ All three `fetch_*()` functions were re-run live end-to-end through `chunk_docum
 
 ---
 
+#### TD-25: `dx_procedure_conflict`/`missing_modifier_25` Don't Use the New ICD-10 Dataset
+
+**Severity:** LOW
+
+**Observation:** v1.5 added a real CMS ICD-10-CM dataset (`rules/icd10_loader.py`) and a new, separate check (`rules/icd10.py`) for code existence and unspecified-diagnosis detection. The two pre-existing hardcoded rules in `rules/code_validity.py` — `dx_procedure_conflict` (exact-match on `"Z00.00"`) and `missing_modifier_25` (prefix-match on `"Z00"`) — were deliberately left untouched per the v1.5 scope ("No orchestrator changes unless absolutely necessary," "Avoid complex hierarchy traversal," "Do NOT implement ICD-10 hierarchy reasoning"). They still only recognize the one preventive-visit dx family hardcoded in `_PREVENTIVE_DX_PREFIXES`/`_load_dx_procedure_rules()`, and don't use the dataset's descriptions or billable flags at all.
+
+**Impact:** Low — the two existing rules' behavior is unchanged and still tested (`tests/test_rule_engine.py`). This is a missed reuse opportunity, not a regression: the new dataset could in principle generalize `_PREVENTIVE_DX_PREFIXES` beyond `Z00`-only by checking description text (e.g. "encounter for ... examination") instead of a hardcoded prefix tuple, but doing so would reintroduce hierarchy/category reasoning that v1.5 explicitly scoped out.
+
+**Recommended Fix:** Revisit only if a future sprint explicitly takes on dx-procedure conflict generalization — out of scope for now per "Keep scope tightly constrained."
+
+**Status:** Open. Informational — not a blocker, discovered while implementing v1.5.
+
+---
+
 ## Debt Summary
 
 | Priority | Count | Resolved | Open |
 |---|---|---|---|
-| High | 11 | 11 (R1–R5, TD-01, TD-02, TD-03, TD-05, TD-08, TD-18) | 1 (TD-04 partial, TD-06 — see note) |
+| High | 11 | 11 (R1–R5, TD-01, TD-02, TD-03, TD-05, TD-08, TD-18) | 1 (TD-04 partial, TD-06 partial — see note) |
 | Medium | 10 | 4 (TD-07, TD-07b, TD-08, TD-09) | 6 (TD-07a, TD-10, TD-11, TD-12, TD-21, TD-24) |
-| Low | 9 | 1 (TD-17) | 8 (TD-13, TD-14, TD-15, TD-16, TD-19, TD-20, TD-22, TD-23) |
+| Low | 10 | 1 (TD-17) | 9 (TD-13, TD-14, TD-15, TD-16, TD-19, TD-20, TD-22, TD-23, TD-25) |
 | Sprint 3 additions | 3 | 3 | 0 |
-| **Total** | **33** | **20** | **13** |
+| **Total** | **34** | **20** | **14** |
 
-Note: TD-04 (most LLM agents still stubs) is now further resolved — orchestrator and denial_prevention are implemented (Phase 7, light scope), and the Coding Validation Agent is now implemented (v1.3, ADR-016). Only Documentation Review (deferred, not a blocker) remains open under TD-04. TD-06 (two hardcoded code validity rules) remains fully open — neither was touched this phase. TD-08 (`test_orchestrator.py` stub) is now fully resolved. TD-09 (golden set evaluation framework) is now resolved (v1.4); its first live run surfaced TD-24 (agent over-flagging lowers live precision), which remains open.
+Note: TD-04 (most LLM agents still stubs) is now further resolved — orchestrator and denial_prevention are implemented (Phase 7, light scope), and the Coding Validation Agent is now implemented (v1.3, ADR-016). Only Documentation Review (deferred, not a blocker) remains open under TD-04. TD-06 (two hardcoded code validity rules) is now partially resolved — the ICD-10-CM reference dataset piece is delivered (v1.5, via a new separate module rather than rewriting `_load_dx_procedure_rules()`); modifier-rule expansion and HCPCS Level II validity remain open. TD-08 (`test_orchestrator.py` stub) is now fully resolved. TD-09 (golden set evaluation framework) is now resolved (v1.4); its first live run surfaced TD-24 (agent over-flagging lowers live precision), which remains open. v1.5 also opened TD-25 (LOW, informational — the two pre-existing hardcoded code_validity.py rules don't use the new ICD-10 dataset, by design/scope).
 
 Items R1–R5 were addressed in the pre-audit model refactor and Sprint 2.
 Items R6–R8 were addressed in Sprint 3 (policy intelligence foundation).
@@ -498,3 +512,5 @@ Separately investigated (no bug found): traced why two different live runs displ
 **v1.3 note (Coding Validation Agent):** `agents/coding_validation.py` implemented, mirroring `agents/coverage_validation.py`'s exact architecture (same vector-store-first/JSON-fallback retrieval, same forced-tool-choice two-tool schema, same citation-grounding and error-handling pattern) — see ADR-016. Scoped narrowly to reasoning the rule layer cannot perform (diagnosis specificity, diagnosis-to-procedure support, coding defensibility, payer scrutiny risk); the system prompt explicitly instructs the model to assume NCCI/MUE/modifier/code-validity checks are already done. `agents/orchestrator.py` calls it sequentially after the Coverage Agent (no parallel execution); `agents/denial_prevention.py:synthesize()` grew a third `coding_findings` parameter. ADR-015 is left unchanged per its "non-goal" framing being superseded, not rewritten, by ADR-016. TD-04 further resolved — only Documentation Review remains open under it. `tests/test_orchestrator.py`'s `test_no_coding_validation_placeholder_finding_ever_appears` (a Phase 7 regression guard against a fabricated Coding Validation finding) was removed since Coding Validation is now a real, implemented agent; superseded by real coverage in `tests/test_coding_validation.py` and new orchestrator-integration tests. 41 new tests (27 in `test_coding_validation.py`, 4 in `test_denial_prevention.py`, 10 net new in `test_orchestrator.py`). Total tests: 349 passing.
 
 **v1.4 note (Golden Set Evaluation Framework):** `evaluation/` added — `golden_claims.json` (14 synthetic claims covering invalid NPI, NCCI conflict, MUE limit, missing modifier 25, diagnosis-procedure mismatch, Medicare coverage concern, coding defensibility concern, multi-finding, and clean scenarios), `metrics.py` (Finding.rule → normalized label mapping, micro-averaged precision/recall/F1), `harness.py` (`run_evaluation()` calling `agents.orchestrator.run_review()` per claim, offline by default with Coverage/Coding Agents mocked to `[]`, or `live=True` for real API calls), and `run_evaluation.py` (CLI, saves `latest_report.md`/`latest_results.json`/`latest_summary.json`). No existing module's logic was modified — `agents/orchestrator.py` and `agents/denial_prevention.py` are called exactly as they are. TD-09 resolved. Offline evaluation: Rule Engine 1.00/1.00/1.00 precision/recall/F1; Coverage/Coding Agent categories show as 0.00 by design (mocked off), not measured agent quality. A `--live` run (real `claude-haiku-4-5` calls) measured Rule Engine still 1.00/1.00/1.00, Coverage Agent 0.30 precision/1.00 recall, Coding Agent 0.25 precision/1.00 recall — both agents catch every labeled positive but also flag several claims not labeled as agent-positive, opening TD-24. 26 new tests in `tests/test_evaluation.py`, all offline-safe. Total tests: 375 passing.
+
+**v1.5 note (ICD-10 Expansion):** Downloaded the real CMS FY2026 ICD-10-CM order file (`data/reference/icd10/icd10cm_order_2026.txt`, ~98,000 codes, gitignored like NCCI/MUE) and built `rules/icd10_loader.py` (file-backed fixed-width parser, `lru_cache`, small synthetic fallback for portability) and `rules/icd10.py` (`check_icd10_validity()` — `icd10_invalid` HIGH finding for codes not in the dataset, `icd10_unspecified` MEDIUM finding for codes whose CMS description contains "unspecified," a lookup-based signal rather than hierarchy traversal). Wired into `rules/rule_engine.py` after `code_validity`, respecting the existing HIGH-NPI short-circuit; `CHECKS_RUN` extended. The two pre-existing hardcoded rules in `code_validity.py` (Z00.00 dx-procedure conflict, missing modifier 25) were deliberately left untouched, opening TD-25 (informational, LOW) — partially resolving TD-06. Two golden claims needed updates since their diagnosis codes are themselves unspecified per CMS: `GOLD-009`'s `expected_findings` changed from `[]` to `["unspecified_diagnosis"]`, and `GOLD-011` gained `"unspecified_diagnosis"` alongside its existing `"coding_defensibility"` label; `evaluation/metrics.py` gained two new normalized labels (`invalid_icd10_code`, `unspecified_diagnosis`). Rule Engine offline precision/recall/F1 remains 1.00/1.00/1.00 after these updates. One existing test (`test_clean_claim_overall_risk_is_clean` in `tests/test_rule_engine.py`) had its fixture diagnosis code changed from `J06.9` to `J02.0` since `J06.9`'s own CMS description is "unspecified" and now correctly raises a finding — no assertions were changed, only the fixture. No new LLM calls, no Anthropic usage, no orchestrator changes. 29 new tests in `tests/test_icd10.py`. Total tests: 404 passing.

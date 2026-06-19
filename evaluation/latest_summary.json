@@ -2,16 +2,16 @@
   "mode": "offline",
   "claims_evaluated": 14,
   "overall": {
-    "true_positives": 16,
+    "true_positives": 18,
     "false_positives": 0,
     "false_negatives": 6,
     "precision": 1.0,
-    "recall": 0.7272727272727273,
-    "f1": 0.8421052631578948
+    "recall": 0.75,
+    "f1": 0.8571428571428571
   },
   "by_category": {
     "Rule Engine": {
-      "true_positives": 16,
+      "true_positives": 18,
       "false_positives": 0,
       "false_negatives": 0,
       "precision": 1.0,

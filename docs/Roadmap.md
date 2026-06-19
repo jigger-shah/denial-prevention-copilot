@@ -229,8 +229,8 @@ Replace the single hardcoded NCCI PTP edit pair with a file-backed lookup using 
 
 ## Phase 3 — Complete the Deterministic Layer
 
-**Status:** Phase A + Phase B + Sprint 8 (UI/UX) complete — deterministic layer is MVP-complete; ICD-10-CM deferred
-**Estimated scope:** ICD-10-CM loader deferred; all other deterministic checks implemented and tested
+**Status:** Phase A + Phase B + Sprint 8 (UI/UX) complete — deterministic layer is MVP-complete. ICD-10-CM loader deferred here, later delivered in Phase 8.5 (v1.5).
+**Estimated scope:** ICD-10-CM loader deferred (see Phase 8.5); all other deterministic checks implemented and tested
 
 ### Objectives
 Replace all hardcoded rule data with real CMS reference files. Add NPI live validation. This phase makes the rule layer production-complete before any LLM is introduced.
@@ -243,7 +243,7 @@ Replace all hardcoded rule data with real CMS reference files. Add NPI live vali
 - `rules/mue.py`: ✅ **Implemented (Phase A).** `check_mue_limits()` with MAI-aware severity; wired into rule engine
 - `app/claim_intake.py`: ✅ **Updated (Phase A).** `build_manual_claim()` populates `ClaimIn.units`; units column in service-line grid
 - `rules/npi.py`: ✅ **Implemented (Phase B).** `luhn_valid()` (Luhn with "80840" prefix); `lookup_nppes()` (NPPES API v2.1, 2s timeout); `check_npi()` with HIGH/MEDIUM/no-finding paths; SHORT-CIRCUITS rule engine on HIGH; NPPES errors silenced
-- `rules/code_validity.py`: 🔜 ICD-10-CM FY reference file loader (replaces Z00.00 hardcode); HCPCS Level II validity; expanded modifier rules
+- `rules/code_validity.py`: Z00.00 dx-procedure conflict and modifier-25 rules unchanged. ✅ ICD-10-CM FY reference file loader delivered separately in `rules/icd10_loader.py`/`rules/icd10.py` (Phase 8.5 / v1.5) rather than inside this module. HCPCS Level II validity and expanded modifier rules remain 🔜.
 - `rules/rule_engine.py`: ✅ **Updated (Phase B + Sprint 8).** NPI runs first; HIGH finding short-circuits before NCCI/MUE/code_validity; MEDIUM NPI finding included but does not short-circuit. `CHECKS_RUN` exported for UI consumption.
 - `app/main.py`: ✅ **Updated (Sprint 8).** Checks-run always visible after review (not just on CLEAN); NPI short-circuit message displayed; "Not provided" for blank NPI in sample mode; blue primary button via `.streamlit/config.toml`.
 
@@ -500,6 +500,39 @@ Built as a standalone `evaluation/` module + CLI rather than a `pytest -m golden
 
 ---
 
+## Phase 8.5 — ICD-10 Expansion (v1.5) ✅ Complete
+
+**Tests:** 404 tests, all passing (+29)
+
+### Objectives
+Replace the hardcoded ICD-10 validation logic deferred since Phase 3 with a real ICD-10-CM reference dataset, closing the long-open gap noted there. Scope held tightly to code existence + description lookup + unspecified-diagnosis detection — no hierarchy reasoning, no new agents, no LLM calls.
+
+### Deliverables
+- `data/reference/icd10/icd10cm_order_2026.txt`: real CMS FY2026 ICD-10-CM order file (~98,000 codes), downloaded from `cms.gov`. Gitignored (matches the existing `data/reference/**/*.txt` pattern used by NCCI/MUE).
+- `rules/icd10_loader.py`: file-backed fixed-width parser (mirrors `ncci_loader.py`/`mue_loader.py` conventions) with `lru_cache`; small synthetic fallback dict (`_SYNTHETIC_ICD10`, 10 codes) for portability when the CMS file isn't present (it's gitignored, like NCCI/MUE).
+- `rules/icd10.py`: `check_icd10_validity(claim)` — two new rule types: `icd10_invalid` (HIGH, code not found in the dataset) and `icd10_unspecified` (MEDIUM, code found but its CMS description contains "unspecified" — a lookup-based signal, not hierarchy traversal).
+- `rules/rule_engine.py`: new check appended to `CHECKS_RUN` and the `review_claim()` call sequence, after `code_validity`; respects the existing HIGH-NPI short-circuit. The pre-existing `dx_procedure_conflict`/`missing_modifier_25` rules in `code_validity.py` were left untouched.
+- `evaluation/metrics.py`: two new normalized labels (`invalid_icd10_code`, `unspecified_diagnosis`) added to `RULE_LABELS`.
+- `evaluation/golden_claims.json`: `GOLD-009` and `GOLD-011` updated — both use diagnosis codes (`J06.9`, `R10.9`) whose own CMS descriptions are unspecified, so the new rule-layer check now legitimately fires on them. `GOLD-009`'s `expected_findings` changed from `[]` to `["unspecified_diagnosis"]`; `GOLD-011` gained `"unspecified_diagnosis"` alongside its existing `"coding_defensibility"` label. Rule Engine offline precision/recall/F1 remains 1.00/1.00/1.00 after the update.
+- `tests/test_icd10.py`: 29 new tests — file discovery, fixed-width parsing (fixture + real file), lookup, valid/invalid/unspecified/unknown code findings, duplicate-code de-duplication, citation structure, rule-engine integration (including the HIGH-NPI short-circuit still suppressing the new check).
+- `tests/test_rule_engine.py`: `test_clean_claim_overall_risk_is_clean` switched from `J06.9` to `J02.0` (Streptococcal pharyngitis) — `J06.9`'s own CMS description is "Acute upper respiratory infection, unspecified," so it now correctly raises a MEDIUM finding and is no longer a valid "clean" fixture.
+
+### Dependencies
+- Phase 3 (deterministic layer) and Phase 8 (evaluation framework) complete
+
+### Out of scope (deferred, not part of this phase)
+Documentation Review Agent, deployment, Streamlit Cloud, public repo prep, LLM Denial Prevention Summary Agent, ICD-10 hierarchy reasoning, SNOMED mappings, CPT crosswalks, CMS claim editing engine, clinical decision support, diagnosis recommendations, root-cause grouping, deduplication, UI redesign.
+
+### Success Criteria
+- Full suite passes (404/404) ✅
+- Rule engine validates ICD-10 codes from a real CMS reference dataset ✅
+- Invalid codes flagged (HIGH) ✅
+- Unspecified diagnoses flagged (MEDIUM) ✅
+- Existing rule-engine behavior preserved (only `tests/test_rule_engine.py`'s fixture diagnosis code changed, not its assertions) ✅
+- No new LLM calls; no orchestrator changes ✅
+
+---
+
 ## Phase 9 — Portfolio Publication
 
 **Status:** Future  
@@ -572,5 +605,6 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 | 7 — Light Orchestrator + Synthesis | ✅ Complete (light scope) | Unified Review: rule layer + Coverage Agent → RiskAssessment, 308 tests | P0 |
 | 7.5 — Coding Validation Agent (v1.3) | ✅ Complete | Second LLM agent: coding defensibility, diagnosis specificity, payer scrutiny risk; 349 tests | P0 |
 | 8 — Evaluation Framework (v1.4) | ✅ Complete | Golden set, precision/recall harness; Rule Engine 1.00/1.00/1.00 offline; 375 tests | P0 metric |
+| 8.5 — ICD-10 Expansion (v1.5) | ✅ Complete | Real CMS ICD-10-CM dataset; icd10_invalid/icd10_unspecified rules; 404 tests | P0 |
 | 9 — Portfolio Publication | 🔜 | Public README, screenshots | Portfolio |
 | 10 — Streamlit Cloud | 🔜 | Live public URL | Portfolio |

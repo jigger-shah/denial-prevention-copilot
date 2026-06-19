@@ -24,6 +24,8 @@ RULE_LABELS: dict[str, str] = {
     "mue_unit_limit": "mue_limit",
     "dx_procedure_conflict": "diagnosis_procedure_mismatch",
     "missing_modifier_25": "missing_modifier_25",
+    "icd10_invalid": "invalid_icd10_code",
+    "icd10_unspecified": "unspecified_diagnosis",
 }
 
 # Agent-layer Finding.rule -> normalized label.

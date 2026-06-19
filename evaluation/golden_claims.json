@@ -97,7 +97,7 @@
   },
   {
     "claim_id": "GOLD-009",
-    "description": "Clean claim — problem-oriented E/M with a matching acute diagnosis, no findings expected",
+    "description": "Problem-oriented E/M with a matching acute diagnosis, dx-procedure pairing is clean — J06.9's own description is unspecified, so the v1.5 ICD-10 rule-layer check still flags it",
     "payer": "BCBS Commercial",
     "npi": "",
     "cpt_codes": ["99213", "85025"],
@@ -105,7 +105,7 @@
     "modifiers": [],
     "place_of_service": "11",
     "units": {"99213": 1, "85025": 1},
-    "expected_findings": []
+    "expected_findings": ["unspecified_diagnosis"]
   },
   {
     "claim_id": "GOLD-010",
@@ -121,7 +121,7 @@
   },
   {
     "claim_id": "GOLD-011",
-    "description": "Coding defensibility concern — high-level E/M supported only by an unspecified symptom diagnosis. Coding Agent finding only; requires --live evaluation to surface this label, since offline mode mocks the Coding Agent.",
+    "description": "Coding defensibility concern — high-level E/M supported only by an unspecified symptom diagnosis. coding_defensibility is an agent-layer finding only; requires --live evaluation to surface, since offline mode mocks the Coding Agent. unspecified_diagnosis is a rule-layer finding (R10.9's own description is unspecified) and surfaces in both modes.",
     "payer": "Medicare Part B",
     "npi": "",
     "cpt_codes": ["99214"],
@@ -129,7 +129,7 @@
     "modifiers": [],
     "place_of_service": "11",
     "units": {},
-    "expected_findings": ["coding_defensibility"]
+    "expected_findings": ["coding_defensibility", "unspecified_diagnosis"]
   },
   {
     "claim_id": "GOLD-012",

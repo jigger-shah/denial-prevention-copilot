@@ -4,7 +4,7 @@ Agentic pre-submission claim review that catches denial risks before a claim lea
 
 A Documentation Review Agent remains part of the product vision and roadmap but is currently deferred (not implemented, not required for this MVP) — see `docs/Roadmap.md` Phase 6.
 
-Built on free public data: NPPES NPI Registry, CMS Coverage API (NCDs/LCDs), NCCI PTP and MUE files, ICD-10-CM, HCPCS Level II. Synthetic claims only — no PHI.
+Built on free public data: NPPES NPI Registry, CMS Coverage API (NCDs/LCDs), NCCI PTP and MUE files, the real CMS ICD-10-CM order file, HCPCS Level II. Synthetic claims only — no PHI.
 
 ## Setup
 
@@ -40,4 +40,4 @@ Saves `latest_report.md`, `latest_results.json`, and `latest_summary.json` to `e
 
 ## Architecture
 
-See `docs/PRD_Agentic_Claims_Review_and_Denial_Prevention_Copilot.pdf` for the full product spec. High-level: deterministic rule checks (`rules/`) run before any LLM call, with a HIGH NPI finding short-circuiting downstream checks; the orchestrator (`agents/orchestrator.py`) then calls the Coverage Validation Agent and the Coding Validation Agent sequentially and synthesizes all three sources into one `RiskAssessment` (`agents/denial_prevention.py`) — no LLM call in synthesis; both agents' findings are grounded in retrieved LCD/NCD text (`retrieval/`), reusing the same retrieval path with different reasoning prompts; all decisions land in an immutable audit log (`db/`). A standalone golden-set evaluation harness (`evaluation/`) runs the same orchestrator end-to-end against labelled synthetic claims to measure precision/recall/F1 by category.
+See `docs/PRD_Agentic_Claims_Review_and_Denial_Prevention_Copilot.pdf` for the full product spec. High-level: deterministic rule checks (`rules/`) run before any LLM call, with a HIGH NPI finding short-circuiting downstream checks; the orchestrator (`agents/orchestrator.py`) then calls the Coverage Validation Agent and the Coding Validation Agent sequentially and synthesizes all three sources into one `RiskAssessment` (`agents/denial_prevention.py`) — no LLM call in synthesis; both agents' findings are grounded in retrieved LCD/NCD text (`retrieval/`), reusing the same retrieval path with different reasoning prompts; all decisions land in an immutable audit log (`db/`). A standalone golden-set evaluation harness (`evaluation/`) runs the same orchestrator end-to-end against labelled synthetic claims to measure precision/recall/F1 by category. ICD-10-CM diagnosis codes are validated against the real CMS ICD-10-CM order file (`rules/icd10_loader.py`, `rules/icd10.py`) for code existence and unspecified-diagnosis detection — see `docs/Roadmap.md` Phase 8.5.

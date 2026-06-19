@@ -131,10 +131,14 @@
   },
   {
     "claim_id": "GOLD-009",
-    "description": "Clean claim \u2014 problem-oriented E/M with a matching acute diagnosis, no findings expected",
-    "expected_findings": [],
-    "actual_findings": [],
-    "true_positives": 0,
+    "description": "Problem-oriented E/M with a matching acute diagnosis, dx-procedure pairing is clean \u2014 J06.9's own description is unspecified, so the v1.5 ICD-10 rule-layer check still flags it",
+    "expected_findings": [
+      "unspecified_diagnosis"
+    ],
+    "actual_findings": [
+      "unspecified_diagnosis"
+    ],
+    "true_positives": 1,
     "false_positives": 0,
     "false_negatives": 0,
     "precision": 1.0,
@@ -157,17 +161,20 @@
   },
   {
     "claim_id": "GOLD-011",
-    "description": "Coding defensibility concern \u2014 high-level E/M supported only by an unspecified symptom diagnosis. Coding Agent finding only; requires --live evaluation to surface this label, since offline mode mocks the Coding Agent.",
+    "description": "Coding defensibility concern \u2014 high-level E/M supported only by an unspecified symptom diagnosis. coding_defensibility is an agent-layer finding only; requires --live evaluation to surface, since offline mode mocks the Coding Agent. unspecified_diagnosis is a rule-layer finding (R10.9's own description is unspecified) and surfaces in both modes.",
     "expected_findings": [
-      "coding_defensibility"
+      "coding_defensibility",
+      "unspecified_diagnosis"
     ],
-    "actual_findings": [],
-    "true_positives": 0,
+    "actual_findings": [
+      "unspecified_diagnosis"
+    ],
+    "true_positives": 1,
     "false_positives": 0,
     "false_negatives": 1,
-    "precision": 0.0,
-    "recall": 0.0,
-    "f1": 0.0
+    "precision": 1.0,
+    "recall": 0.5,
+    "f1": 0.6666666666666666
   },
   {
     "claim_id": "GOLD-012",

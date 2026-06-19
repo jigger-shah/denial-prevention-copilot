@@ -11,13 +11,13 @@ this module first (deterministic checks) before dispatching agents.
 import hashlib
 
 from rules.models import ClaimIn, Finding
-from rules import ncci, mue, code_validity, npi
+from rules import ncci, mue, code_validity, npi, icd10
 
 
 _SEVERITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
 
 # Human-readable labels for all rule checks, in execution order.
-# A HIGH NPI finding short-circuits NCCI, MUE, and code_validity.
+# A HIGH NPI finding short-circuits NCCI, MUE, code_validity, and icd10.
 # Import in the UI to show what was evaluated — including short-circuit state.
 CHECKS_RUN: list[str] = [
     "NPI — format + Luhn check-digit + NPPES registry",
@@ -25,6 +25,7 @@ CHECKS_RUN: list[str] = [
     "MUE — medically unlikely unit limits",
     "Code validity — diagnosis-to-procedure conflict",
     "Code validity — modifier 25 requirement",
+    "ICD-10-CM — code validity + unspecified diagnosis",
 ]
 
 
@@ -86,6 +87,7 @@ def review_claim(claim: ClaimIn) -> list[Finding]:
     findings.extend(ncci.check_ncci_pairs(claim))
     findings.extend(mue.check_mue_limits(claim))
     findings.extend(code_validity.check_code_validity(claim))
+    findings.extend(icd10.check_icd10_validity(claim))
     findings.sort(key=lambda f: _SEVERITY_ORDER.get(f.severity, 9))
 
     for finding in findings:
