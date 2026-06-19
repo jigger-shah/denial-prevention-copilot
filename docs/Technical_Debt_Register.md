@@ -466,17 +466,31 @@ All three `fetch_*()` functions were re-run live end-to-end through `chunk_docum
 
 ---
 
+#### TD-26: Weak Model-Selected Citation Excerpts
+
+**Severity:** LOW
+
+**Observation:** The Coding/Coverage agents sometimes return a short or low-information `citation_excerpt` even when the retrieved chunk contains more useful supporting context. Example: the Coding Agent cited NCD 98 with the excerpt "Scroll down for links..." as its grounding quote for an E11.9 specificity finding.
+
+**Impact:** The finding is still grounded — `citation_doc_id`/`citation_section`/`citation_effective_date` are present and the underlying retrieval is correct — but the displayed evidence can look weak in demos and reduce reviewer trust in an otherwise valid finding.
+
+**Recommended Fix:** Prefer displaying the retrieved source chunk excerpt, capped at ~1,000 characters, when the model-selected `citation_excerpt` is too short, generic, or low-information. Keep the model-selected quote only when it provides strong support.
+
+**Status:** Open. Not blocking v1.5.
+
+---
+
 ## Debt Summary
 
 | Priority | Count | Resolved | Open |
 |---|---|---|---|
 | High | 11 | 11 (R1–R5, TD-01, TD-02, TD-03, TD-05, TD-08, TD-18) | 1 (TD-04 partial, TD-06 partial — see note) |
 | Medium | 10 | 4 (TD-07, TD-07b, TD-08, TD-09) | 6 (TD-07a, TD-10, TD-11, TD-12, TD-21, TD-24) |
-| Low | 10 | 1 (TD-17) | 9 (TD-13, TD-14, TD-15, TD-16, TD-19, TD-20, TD-22, TD-23, TD-25) |
+| Low | 11 | 1 (TD-17) | 10 (TD-13, TD-14, TD-15, TD-16, TD-19, TD-20, TD-22, TD-23, TD-25, TD-26) |
 | Sprint 3 additions | 3 | 3 | 0 |
-| **Total** | **34** | **20** | **14** |
+| **Total** | **35** | **20** | **15** |
 
-Note: TD-04 (most LLM agents still stubs) is now further resolved — orchestrator and denial_prevention are implemented (Phase 7, light scope), and the Coding Validation Agent is now implemented (v1.3, ADR-016). Only Documentation Review (deferred, not a blocker) remains open under TD-04. TD-06 (two hardcoded code validity rules) is now partially resolved — the ICD-10-CM reference dataset piece is delivered (v1.5, via a new separate module rather than rewriting `_load_dx_procedure_rules()`); modifier-rule expansion and HCPCS Level II validity remain open. TD-08 (`test_orchestrator.py` stub) is now fully resolved. TD-09 (golden set evaluation framework) is now resolved (v1.4); its first live run surfaced TD-24 (agent over-flagging lowers live precision), which remains open. v1.5 also opened TD-25 (LOW, informational — the two pre-existing hardcoded code_validity.py rules don't use the new ICD-10 dataset, by design/scope).
+Note: TD-04 (most LLM agents still stubs) is now further resolved — orchestrator and denial_prevention are implemented (Phase 7, light scope), and the Coding Validation Agent is now implemented (v1.3, ADR-016). Only Documentation Review (deferred, not a blocker) remains open under TD-04. TD-06 (two hardcoded code validity rules) is now partially resolved — the ICD-10-CM reference dataset piece is delivered (v1.5, via a new separate module rather than rewriting `_load_dx_procedure_rules()`); modifier-rule expansion and HCPCS Level II validity remain open. TD-08 (`test_orchestrator.py` stub) is now fully resolved. TD-09 (golden set evaluation framework) is now resolved (v1.4); its first live run surfaced TD-24 (agent over-flagging lowers live precision), which remains open. v1.5 also opened TD-25 (LOW, informational — the two pre-existing hardcoded code_validity.py rules don't use the new ICD-10 dataset, by design/scope). TD-26 (LOW) was opened after observing weak model-selected `citation_excerpt` values during demo/manual review of live Coding/Coverage Agent output — not blocking v1.5.
 
 Items R1–R5 were addressed in the pre-audit model refactor and Sprint 2.
 Items R6–R8 were addressed in Sprint 3 (policy intelligence foundation).
