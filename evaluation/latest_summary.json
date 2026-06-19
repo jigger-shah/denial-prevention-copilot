@@ -1,0 +1,38 @@
+{
+  "mode": "offline",
+  "claims_evaluated": 14,
+  "overall": {
+    "true_positives": 16,
+    "false_positives": 0,
+    "false_negatives": 6,
+    "precision": 1.0,
+    "recall": 0.7272727272727273,
+    "f1": 0.8421052631578948
+  },
+  "by_category": {
+    "Rule Engine": {
+      "true_positives": 16,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "Coverage Agent": {
+      "true_positives": 0,
+      "false_positives": 0,
+      "false_negatives": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "Coding Agent": {
+      "true_positives": 0,
+      "false_positives": 0,
+      "false_negatives": 3,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
+    }
+  }
+}

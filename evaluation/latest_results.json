@@ -1,0 +1,230 @@
+[
+  {
+    "claim_id": "GOLD-001",
+    "description": "Invalid NPI \u2014 fails Luhn check digit (short-circuits the rule engine)",
+    "expected_findings": [
+      "invalid_npi"
+    ],
+    "actual_findings": [
+      "invalid_npi"
+    ],
+    "true_positives": 1,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  {
+    "claim_id": "GOLD-002",
+    "description": "Invalid NPI \u2014 wrong format, not 10 digits (short-circuits the rule engine)",
+    "expected_findings": [
+      "invalid_npi"
+    ],
+    "actual_findings": [
+      "invalid_npi"
+    ],
+    "true_positives": 1,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  {
+    "claim_id": "GOLD-003",
+    "description": "NCCI conflict only \u2014 basic metabolic panel billed with comprehensive panel",
+    "expected_findings": [
+      "ncci_conflict"
+    ],
+    "actual_findings": [
+      "ncci_conflict"
+    ],
+    "true_positives": 1,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  {
+    "claim_id": "GOLD-004",
+    "description": "MUE limit issue only \u2014 comprehensive metabolic panel reported above its unit limit",
+    "expected_findings": [
+      "mue_limit"
+    ],
+    "actual_findings": [
+      "mue_limit"
+    ],
+    "true_positives": 1,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  {
+    "claim_id": "GOLD-005",
+    "description": "Missing modifier 25 only \u2014 problem E/M in a preventive-visit context, no modifier 25. Uses Z00.01 (not Z00.00) so the diagnosis-to-procedure rule, which matches only Z00.00 exactly, does not also fire.",
+    "expected_findings": [
+      "missing_modifier_25"
+    ],
+    "actual_findings": [
+      "missing_modifier_25"
+    ],
+    "true_positives": 1,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  {
+    "claim_id": "GOLD-006",
+    "description": "Diagnosis-to-procedure mismatch only \u2014 routine exam dx billed with problem E/M. Modifier 25 is present so the modifier rule does not also fire (it only checks modifier absence; the dx-conflict rule ignores modifiers entirely).",
+    "expected_findings": [
+      "diagnosis_procedure_mismatch"
+    ],
+    "actual_findings": [
+      "diagnosis_procedure_mismatch"
+    ],
+    "true_positives": 1,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  {
+    "claim_id": "GOLD-007",
+    "description": "Multiple rule-layer findings in one claim \u2014 NCCI bundling, MUE overage, dx-procedure mismatch, and missing modifier 25 all at once",
+    "expected_findings": [
+      "diagnosis_procedure_mismatch",
+      "missing_modifier_25",
+      "mue_limit",
+      "ncci_conflict"
+    ],
+    "actual_findings": [
+      "diagnosis_procedure_mismatch",
+      "missing_modifier_25",
+      "mue_limit",
+      "ncci_conflict"
+    ],
+    "true_positives": 4,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  {
+    "claim_id": "GOLD-008",
+    "description": "Clean claim \u2014 preventive visit code correctly paired with well-visit diagnosis, no findings expected",
+    "expected_findings": [],
+    "actual_findings": [],
+    "true_positives": 0,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  {
+    "claim_id": "GOLD-009",
+    "description": "Clean claim \u2014 problem-oriented E/M with a matching acute diagnosis, no findings expected",
+    "expected_findings": [],
+    "actual_findings": [],
+    "true_positives": 0,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  {
+    "claim_id": "GOLD-010",
+    "description": "Medicare coverage concern \u2014 HbA1c billed against a routine-exam diagnosis rather than a diabetes-related one. Coverage Agent finding only; requires --live evaluation (real LLM call) to actually surface this label, since offline mode mocks the Coverage Agent.",
+    "expected_findings": [
+      "coverage_medical_necessity"
+    ],
+    "actual_findings": [],
+    "true_positives": 0,
+    "false_positives": 0,
+    "false_negatives": 1,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0
+  },
+  {
+    "claim_id": "GOLD-011",
+    "description": "Coding defensibility concern \u2014 high-level E/M supported only by an unspecified symptom diagnosis. Coding Agent finding only; requires --live evaluation to surface this label, since offline mode mocks the Coding Agent.",
+    "expected_findings": [
+      "coding_defensibility"
+    ],
+    "actual_findings": [],
+    "true_positives": 0,
+    "false_positives": 0,
+    "false_negatives": 1,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0
+  },
+  {
+    "claim_id": "GOLD-012",
+    "description": "Mixed \u2014 rule-layer NCCI conflict alongside a Medicare coverage concern (agent-layer label requires --live evaluation)",
+    "expected_findings": [
+      "coverage_medical_necessity",
+      "ncci_conflict"
+    ],
+    "actual_findings": [
+      "ncci_conflict"
+    ],
+    "true_positives": 1,
+    "false_positives": 0,
+    "false_negatives": 1,
+    "precision": 1.0,
+    "recall": 0.5,
+    "f1": 0.6666666666666666
+  },
+  {
+    "claim_id": "GOLD-013",
+    "description": "Mixed \u2014 rule-layer missing modifier 25 alongside a coding defensibility concern (agent-layer label requires --live evaluation)",
+    "expected_findings": [
+      "coding_defensibility",
+      "missing_modifier_25"
+    ],
+    "actual_findings": [
+      "missing_modifier_25"
+    ],
+    "true_positives": 1,
+    "false_positives": 0,
+    "false_negatives": 1,
+    "precision": 1.0,
+    "recall": 0.5,
+    "f1": 0.6666666666666666
+  },
+  {
+    "claim_id": "GOLD-014",
+    "description": "Kitchen sink \u2014 every rule-layer finding plus both agent-layer findings in one claim (agent-layer labels require --live evaluation)",
+    "expected_findings": [
+      "coding_defensibility",
+      "coverage_medical_necessity",
+      "diagnosis_procedure_mismatch",
+      "missing_modifier_25",
+      "mue_limit",
+      "ncci_conflict"
+    ],
+    "actual_findings": [
+      "diagnosis_procedure_mismatch",
+      "missing_modifier_25",
+      "mue_limit",
+      "ncci_conflict"
+    ],
+    "true_positives": 4,
+    "false_positives": 0,
+    "false_negatives": 2,
+    "precision": 1.0,
+    "recall": 0.6666666666666666,
+    "f1": 0.8
+  }
+]

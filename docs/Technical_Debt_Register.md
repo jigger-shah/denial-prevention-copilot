@@ -2,7 +2,7 @@
 ## Denial Prevention Copilot
 
 **Last updated:** June 2026
-**Scope:** All known technical debt as of v1.3 (Coding Validation Agent — `agents/coding_validation.py` implemented, 349 tests passing) plus v1.2 UI validation findings
+**Scope:** All known technical debt as of v1.4 (Golden Set Evaluation Framework — `evaluation/` implemented, 375 tests passing) plus v1.2 UI validation findings
 
 Priority definitions:
 - **High** — blocks a P0 PRD requirement, a core demo scenario, or correct audit behavior
@@ -182,24 +182,11 @@ Behavior: empty NPI → no finding (optional field); non-numeric or wrong length
 
 ---
 
-#### TD-09: Golden Set Evaluation Framework Not Implemented
+#### ~~TD-09: Golden Set Evaluation Framework Not Implemented~~ — RESOLVED v1.4
 
-**Description:** CLAUDE.md documents `pytest tests/ -m golden` as the command for golden-set precision/recall evaluation. The `golden` pytest marker, the golden fixture claims, and the evaluation assertions do not exist.
+**Resolution:** `evaluation/golden_claims.json` (14 synthetic claims, expansion path to 25 documented inline), `evaluation/metrics.py` (label normalization + micro-averaged precision/recall/F1), `evaluation/harness.py` (`run_evaluation()`, calling `agents.orchestrator.run_review()` per claim), and `evaluation/run_evaluation.py` (CLI, saves `latest_report.md`/`latest_results.json`/`latest_summary.json`) are now implemented. 26 new tests in `tests/test_evaluation.py`, all offline-safe (Coverage/Coding Agents mocked to return `[]`; no real Anthropic calls). A `--live` flag runs the real agents (default model `claude-haiku-4-5`, already the agents' own default) for a true read on agent-layer precision/recall — never used by the automated suite. See ADR/TD note below and TD-24 for what the first live run surfaced.
 
-**Location:** `tests/` (missing), `data/synthetic/` (missing golden set)
-
-**Impact:**
-- Cannot measure finding precision or recall against the PRD targets (≥90% precision, ≥85% recall).
-- Cannot demonstrate evaluation rigor in an AI PM or healthcare AI interview.
-- No regression protection for agent quality as the system evolves.
-
-**Recommended Fix:**
-1. Create `data/synthetic/golden_claims.json` with 20–30 claims and their expected findings (known correct output).
-2. Add `pytest.ini` configuration for the `golden` marker.
-3. Implement `tests/test_golden.py` with assertions against precision and recall thresholds.
-4. Run after every agent change.
-
-**Planned Sprint:** Phase 8 — Evaluation Framework
+**Note on the original CLAUDE.md reference:** `pytest tests/ -m golden` and a `golden` pytest marker were never implemented — the evaluation harness was built as a standalone `evaluation/` module + CLI instead of a pytest-marked test, since precision/recall against a golden set is a measurement to run and report on demand, not a pass/fail gate to enforce on every `pytest tests/` run. If CLAUDE.md's documented command should still exist, that's a follow-up, not a gap in the framework itself.
 
 ---
 
@@ -448,17 +435,34 @@ All three `fetch_*()` functions were re-run live end-to-end through `chunk_docum
 
 ---
 
+#### TD-24: Agent Over-Flagging Lowers Live Precision
+
+**Severity:** MEDIUM
+
+**Observation:** The first `--live` run of the v1.4 evaluation harness (real Coverage/Coding Agent API calls, `claude-haiku-4-5`) measured Coverage Agent precision 0.30 and Coding Agent precision 0.25, both with 1.00 recall. The agents catch every labeled positive in the golden set, but they also raise a finding on several claims not labeled as agent-positive (e.g. clean rule-layer claims `GOLD-008`/`GOLD-009`), which lowers precision.
+
+**Impact:** Not a harness defect — `evaluation/harness.py` and `evaluation/metrics.py` are measuring real model behavior correctly. The low precision could mean either (a) the agents' prompts are too sensitive and need calibration, or (b) the golden set lacks claims explicitly labeled as agent-negative (clean from a coverage/coding-defensibility standpoint, not just clean at the rule layer), so some of these "false positives" may actually be defensible findings the label set never anticipated. Either way, this number should not be cited as a live accuracy claim until one of those is resolved.
+
+**Recommended Fix:**
+1. Review the specific live findings raised on `GOLD-008`/`GOLD-009`/etc. to judge whether they are genuinely spurious (prompt calibration needed) or plausible-but-unlabeled (golden set needs explicit agent-negative claims).
+2. Expand the golden set with claims deliberately designed to be agent-negative (clean CPT/dx pairing with no plausible coverage or coding concern) so precision reflects real over-flagging, not label gaps.
+3. Re-run `--live` after either fix and compare.
+
+**Status:** Open. Not a harness defect. Address before publishing live AI accuracy claims.
+
+---
+
 ## Debt Summary
 
 | Priority | Count | Resolved | Open |
 |---|---|---|---|
 | High | 11 | 11 (R1–R5, TD-01, TD-02, TD-03, TD-05, TD-08, TD-18) | 1 (TD-04 partial, TD-06 — see note) |
-| Medium | 8 | 3 (TD-07, TD-07b, TD-08) | 5 (TD-07a, TD-09, TD-10, TD-11, TD-12, TD-21) |
+| Medium | 10 | 4 (TD-07, TD-07b, TD-08, TD-09) | 6 (TD-07a, TD-10, TD-11, TD-12, TD-21, TD-24) |
 | Low | 9 | 1 (TD-17) | 8 (TD-13, TD-14, TD-15, TD-16, TD-19, TD-20, TD-22, TD-23) |
 | Sprint 3 additions | 3 | 3 | 0 |
-| **Total** | **31** | **19** | **12** |
+| **Total** | **33** | **20** | **13** |
 
-Note: TD-04 (most LLM agents still stubs) is now further resolved — orchestrator and denial_prevention are implemented (Phase 7, light scope), and the Coding Validation Agent is now implemented (v1.3, ADR-016). Only Documentation Review (deferred, not a blocker) remains open under TD-04. TD-06 (two hardcoded code validity rules) remains fully open — neither was touched this phase. TD-08 (`test_orchestrator.py` stub) is now fully resolved.
+Note: TD-04 (most LLM agents still stubs) is now further resolved — orchestrator and denial_prevention are implemented (Phase 7, light scope), and the Coding Validation Agent is now implemented (v1.3, ADR-016). Only Documentation Review (deferred, not a blocker) remains open under TD-04. TD-06 (two hardcoded code validity rules) remains fully open — neither was touched this phase. TD-08 (`test_orchestrator.py` stub) is now fully resolved. TD-09 (golden set evaluation framework) is now resolved (v1.4); its first live run surfaced TD-24 (agent over-flagging lowers live precision), which remains open.
 
 Items R1–R5 were addressed in the pre-audit model refactor and Sprint 2.
 Items R6–R8 were addressed in Sprint 3 (policy intelligence foundation).
@@ -492,3 +496,5 @@ Separately investigated (no bug found): traced why two different live runs displ
 **Phase 7 note (light orchestrator / Unified Review):** `agents/orchestrator.py` and `agents/denial_prevention.py` implemented against a deliberately light scope — combine the rule layer and the Coverage Validation Agent (the only implemented LLM agent) into one `RiskAssessment`, rather than the original four-agent plan. Documentation Review is explicitly deferred (marked "Deferred / Under Evaluation" in `docs/Roadmap.md`, not removed from the product vision) and Coding Validation is not planned as a separate LLM agent at all — see ADR-015 for the full rationale. No placeholder finding is fabricated for either; 3 dedicated tests in `tests/test_orchestrator.py` guard against this regressing. `RiskAssessment` added to `rules/models.py` as a plain dataclass (DEFER-003 resolved — Pydantic was considered and rejected since the object never crosses a serialization boundary in this scope). TD-04 partially resolved, TD-08 fully resolved. `app/main.py` gained a unified "🚀 Run Full Review" button (both Sample and Manual modes) as the recommended default path, alongside the existing rule-layer-only "Review Claim" button (preserved, relabeled, demoted from primary). 19 new tests (11 in `test_orchestrator.py`, 8 in `test_denial_prevention.py`, all mocking `agents.orchestrator.validate_coverage` — no real Anthropic calls in the suite). Total tests: 308 passing.
 
 **v1.3 note (Coding Validation Agent):** `agents/coding_validation.py` implemented, mirroring `agents/coverage_validation.py`'s exact architecture (same vector-store-first/JSON-fallback retrieval, same forced-tool-choice two-tool schema, same citation-grounding and error-handling pattern) — see ADR-016. Scoped narrowly to reasoning the rule layer cannot perform (diagnosis specificity, diagnosis-to-procedure support, coding defensibility, payer scrutiny risk); the system prompt explicitly instructs the model to assume NCCI/MUE/modifier/code-validity checks are already done. `agents/orchestrator.py` calls it sequentially after the Coverage Agent (no parallel execution); `agents/denial_prevention.py:synthesize()` grew a third `coding_findings` parameter. ADR-015 is left unchanged per its "non-goal" framing being superseded, not rewritten, by ADR-016. TD-04 further resolved — only Documentation Review remains open under it. `tests/test_orchestrator.py`'s `test_no_coding_validation_placeholder_finding_ever_appears` (a Phase 7 regression guard against a fabricated Coding Validation finding) was removed since Coding Validation is now a real, implemented agent; superseded by real coverage in `tests/test_coding_validation.py` and new orchestrator-integration tests. 41 new tests (27 in `test_coding_validation.py`, 4 in `test_denial_prevention.py`, 10 net new in `test_orchestrator.py`). Total tests: 349 passing.
+
+**v1.4 note (Golden Set Evaluation Framework):** `evaluation/` added — `golden_claims.json` (14 synthetic claims covering invalid NPI, NCCI conflict, MUE limit, missing modifier 25, diagnosis-procedure mismatch, Medicare coverage concern, coding defensibility concern, multi-finding, and clean scenarios), `metrics.py` (Finding.rule → normalized label mapping, micro-averaged precision/recall/F1), `harness.py` (`run_evaluation()` calling `agents.orchestrator.run_review()` per claim, offline by default with Coverage/Coding Agents mocked to `[]`, or `live=True` for real API calls), and `run_evaluation.py` (CLI, saves `latest_report.md`/`latest_results.json`/`latest_summary.json`). No existing module's logic was modified — `agents/orchestrator.py` and `agents/denial_prevention.py` are called exactly as they are. TD-09 resolved. Offline evaluation: Rule Engine 1.00/1.00/1.00 precision/recall/F1; Coverage/Coding Agent categories show as 0.00 by design (mocked off), not measured agent quality. A `--live` run (real `claude-haiku-4-5` calls) measured Rule Engine still 1.00/1.00/1.00, Coverage Agent 0.30 precision/1.00 recall, Coding Agent 0.25 precision/1.00 recall — both agents catch every labeled positive but also flag several claims not labeled as agent-positive, opening TD-24. 26 new tests in `tests/test_evaluation.py`, all offline-safe. Total tests: 375 passing.
