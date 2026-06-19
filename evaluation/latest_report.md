@@ -1,6 +1,6 @@
 # Golden Set Evaluation Report
 
-Generated: 2026-06-19 03:01 UTC
+Generated: 2026-06-19 03:44 UTC
 Mode: **offline** — Coverage/Coding Agent calls mocked to return no findings; their categories below reflect that, not agent accuracy. Run with --live for a real read.
 Claims evaluated: 14
 
