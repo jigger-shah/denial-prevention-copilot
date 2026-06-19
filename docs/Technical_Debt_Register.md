@@ -2,7 +2,7 @@
 ## Denial Prevention Copilot
 
 **Last updated:** June 2026
-**Scope:** All known technical debt as of v1.2 (Phase 7 light orchestrator / Unified Review — `agents/orchestrator.py` + `agents/denial_prevention.py` implemented, 308 tests passing) plus v1.2 UI validation findings
+**Scope:** All known technical debt as of v1.3 (Coding Validation Agent — `agents/coding_validation.py` implemented, 349 tests passing) plus v1.2 UI validation findings
 
 Priority definitions:
 - **High** — blocks a P0 PRD requirement, a core demo scenario, or correct audit behavior
@@ -82,21 +82,23 @@ Behavior: empty NPI → no finding (optional field); non-numeric or wrong length
 
 ---
 
-#### TD-04: Most LLM Agents Still Stubs (Partially Resolved Sprint 9; Orchestrator + Synthesis Resolved Phase 7 light scope)
+#### TD-04: Most LLM Agents Still Stubs (Partially Resolved Sprint 9; Orchestrator + Synthesis Resolved Phase 7 light scope; Coding Validation Resolved v1.3)
 
 **Resolution (Partial):** `agents/coverage_validation.py` is implemented as of Sprint 9. `validate_coverage(claim)` calls Claude via structured tool use, enforces citation grounding, and returns 0 or 1 `Finding` object. 14 mocked tests cover all governance paths. See ADR-012 for design decisions.
 
 **Resolution (Phase 7, light scope):** `agents/orchestrator.py` and `agents/denial_prevention.py` are now implemented. `run_review(claim)` runs the rule layer, calls the Coverage Validation Agent when not short-circuited, and passes both finding sets to `denial_prevention.synthesize()` for a deterministic `RiskAssessment`. See ADR-015 for the scoping rationale (light orchestrator, two sources combined — not the original four-agent plan).
 
-**Remaining:** `agents/coding_validation.py` and `agents/documentation_review.py` still contain only docstrings. Documentation Review is **Deferred / Under Evaluation** — it remains part of the product vision (PRD §9) and the roadmap (`docs/Roadmap.md` Phase 6), to be revisited before public release, but is explicitly not required for the current MVP. Coding Validation is not planned as a separate LLM agent at all (see ADR-015 rationale) — it would duplicate rule-layer responsibilities already handled deterministically by NCCI/MUE/code_validity.
+**Resolution (v1.3):** `agents/coding_validation.py` is now implemented, mirroring the Coverage Agent's architecture exactly (same retrieval, same citation-grounding/governance pattern, same error handling), scoped to reasoning the rule layer cannot perform (diagnosis specificity, coding defensibility, payer scrutiny risk). `agents/orchestrator.py` calls it sequentially after the Coverage Agent; `agents/denial_prevention.py:synthesize()` combines all three finding sources. See ADR-016 (supersedes ADR-015's "non-goal" framing for Coding Validation specifically; ADR-015 itself is left unchanged).
 
-**Description:** `agents/coding_validation.py` and `agents/documentation_review.py` contain docstrings describing intended behavior but no implementation.
+**Remaining:** `agents/documentation_review.py` still contains only a docstring. Documentation Review is **Deferred / Under Evaluation** — it remains part of the product vision (PRD §9) and the roadmap (`docs/Roadmap.md` Phase 6), to be revisited before public release, but is explicitly not required for the current MVP.
 
-**Location:** `agents/coding_validation.py`, `agents/documentation_review.py`
+**Description:** `agents/documentation_review.py` contains a docstring describing intended behavior but no implementation.
+
+**Location:** `agents/documentation_review.py`
 
 **Impact:**
-- Documentation review findings do not exist yet — by design for this milestone, not as an oversight. No placeholder finding is fabricated in its place (verified by 3 dedicated tests in `tests/test_orchestrator.py`).
-- The full four-agent PRD vision (§9) is not yet fully assembled; the orchestrator currently combines two sources (rules + coverage), not four.
+- Documentation review findings do not exist yet — by design for this milestone, not as an oversight. No placeholder finding is fabricated in its place (verified by dedicated tests in `tests/test_orchestrator.py`).
+- The full four-agent PRD vision (§9) is not yet fully assembled; the orchestrator currently combines three sources (rules + coverage + coding), not four.
 
 **Recommended Fix:**
 - Phase 6 (when revisited, pre-public-release): Implement `documentation_review.py`, wire it into `agents/orchestrator.py` as an additional call before `denial_prevention.synthesize()`.
@@ -440,7 +442,7 @@ All three `fetch_*()` functions were re-run live end-to-end through `chunk_docum
 | Sprint 3 additions | 3 | 3 | 0 |
 | **Total** | **30** | **19** | **11** |
 
-Note: TD-04 (most LLM agents still stubs) is now partially resolved — orchestrator and denial_prevention are implemented (Phase 7, light scope); only Documentation Review (deferred, not a blocker) and Coding Validation (not planned as a separate agent) remain. TD-06 (two hardcoded code validity rules) remains fully open — neither was touched this phase. TD-08 (`test_orchestrator.py` stub) is now fully resolved.
+Note: TD-04 (most LLM agents still stubs) is now further resolved — orchestrator and denial_prevention are implemented (Phase 7, light scope), and the Coding Validation Agent is now implemented (v1.3, ADR-016). Only Documentation Review (deferred, not a blocker) remains open under TD-04. TD-06 (two hardcoded code validity rules) remains fully open — neither was touched this phase. TD-08 (`test_orchestrator.py` stub) is now fully resolved.
 
 Items R1–R5 were addressed in the pre-audit model refactor and Sprint 2.
 Items R6–R8 were addressed in Sprint 3 (policy intelligence foundation).
@@ -472,3 +474,5 @@ The remaining open High items (TD-04, TD-05, TD-06) represent the core gap: LLM 
 Separately investigated (no bug found): traced why two different live runs displayed two different sentences from the same retrieved chunk as `citation_excerpt` — confirmed this is the model selecting a sub-span of the full chunk it was given (intended tool-use behavior, the schema asks for a supporting excerpt, not the whole chunk), not truncation in chunking, retrieval, or cleanup. This investigation surfaced TD-20 (raw tool-call payloads and `citation_excerpt` are never persisted, so a saved decision's literal excerpt can't be reconstructed after the fact).
 
 **Phase 7 note (light orchestrator / Unified Review):** `agents/orchestrator.py` and `agents/denial_prevention.py` implemented against a deliberately light scope — combine the rule layer and the Coverage Validation Agent (the only implemented LLM agent) into one `RiskAssessment`, rather than the original four-agent plan. Documentation Review is explicitly deferred (marked "Deferred / Under Evaluation" in `docs/Roadmap.md`, not removed from the product vision) and Coding Validation is not planned as a separate LLM agent at all — see ADR-015 for the full rationale. No placeholder finding is fabricated for either; 3 dedicated tests in `tests/test_orchestrator.py` guard against this regressing. `RiskAssessment` added to `rules/models.py` as a plain dataclass (DEFER-003 resolved — Pydantic was considered and rejected since the object never crosses a serialization boundary in this scope). TD-04 partially resolved, TD-08 fully resolved. `app/main.py` gained a unified "🚀 Run Full Review" button (both Sample and Manual modes) as the recommended default path, alongside the existing rule-layer-only "Review Claim" button (preserved, relabeled, demoted from primary). 19 new tests (11 in `test_orchestrator.py`, 8 in `test_denial_prevention.py`, all mocking `agents.orchestrator.validate_coverage` — no real Anthropic calls in the suite). Total tests: 308 passing.
+
+**v1.3 note (Coding Validation Agent):** `agents/coding_validation.py` implemented, mirroring `agents/coverage_validation.py`'s exact architecture (same vector-store-first/JSON-fallback retrieval, same forced-tool-choice two-tool schema, same citation-grounding and error-handling pattern) — see ADR-016. Scoped narrowly to reasoning the rule layer cannot perform (diagnosis specificity, diagnosis-to-procedure support, coding defensibility, payer scrutiny risk); the system prompt explicitly instructs the model to assume NCCI/MUE/modifier/code-validity checks are already done. `agents/orchestrator.py` calls it sequentially after the Coverage Agent (no parallel execution); `agents/denial_prevention.py:synthesize()` grew a third `coding_findings` parameter. ADR-015 is left unchanged per its "non-goal" framing being superseded, not rewritten, by ADR-016. TD-04 further resolved — only Documentation Review remains open under it. `tests/test_orchestrator.py`'s `test_no_coding_validation_placeholder_finding_ever_appears` (a Phase 7 regression guard against a fabricated Coding Validation finding) was removed since Coding Validation is now a real, implemented agent; superseded by real coverage in `tests/test_coding_validation.py` and new orchestrator-integration tests. 41 new tests (27 in `test_coding_validation.py`, 4 in `test_denial_prevention.py`, 10 net new in `test_orchestrator.py`). Total tests: 349 passing.

@@ -1,10 +1,11 @@
 """
 Denial Prevention Agent — deterministic synthesis, no LLM call.
 
-Combines rule-layer findings and coverage-agent findings into a single
-RiskAssessment. This module makes no model calls and performs no retrieval —
-it is pure aggregation over already-produced Finding objects, consistent with
-CLAUDE.md's "orchestrator is a Python controller, not an agent loop."
+Combines rule-layer findings, coverage-agent findings, and coding-agent
+findings into a single RiskAssessment. This module makes no model calls and
+performs no retrieval — it is pure aggregation over already-produced Finding
+objects, consistent with CLAUDE.md's "orchestrator is a Python controller,
+not an agent loop."
 
 Scoring reuses rules.rule_engine.overall_risk() (severity-based: HIGH > MEDIUM
 > LOW > CLEAN) applied to the combined finding list, rather than inventing a
@@ -18,10 +19,10 @@ CONFIDENCE_REVIEW_THRESHOLD matches the value already used for the per-finding
 "Manual Review Recommended" caption in app/main.py, so claim-level escalation
 and finding-level captions agree on the same number rather than drifting.
 
-Scope note (Phase 7, light orchestrator): only rule findings and coverage
-findings are combined here. Documentation Review and Coding Validation are
-deferred — see docs/Roadmap.md and docs/Technical_Debt_Register.md TD-04 —
-and this module does not fabricate placeholder findings for either.
+Scope note (v1.3): rule findings, coverage findings, and coding findings are
+combined here. Documentation Review remains deferred — see docs/Roadmap.md,
+docs/Technical_Debt_Register.md TD-04, and docs/Architecture_Decisions.md
+ADR-016 — and this module does not fabricate a placeholder finding for it.
 """
 
 from __future__ import annotations
@@ -37,16 +38,17 @@ _SEVERITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
 def synthesize(
     rule_findings: list[Finding],
     coverage_findings: list[Finding],
+    coding_findings: list[Finding],
     checks_run: list[str],
 ) -> RiskAssessment:
     """
-    Combine rule and coverage findings into one RiskAssessment.
+    Combine rule, coverage, and coding findings into one RiskAssessment.
 
     checks_run is passed through as given by the caller (agents.orchestrator) —
     this function does not decide what ran, only how to score what came back.
     """
     all_findings = sorted(
-        [*rule_findings, *coverage_findings],
+        [*rule_findings, *coverage_findings, *coding_findings],
         key=lambda f: _SEVERITY_ORDER.get(f.severity, len(_SEVERITY_ORDER)),
     )
 

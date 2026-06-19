@@ -720,6 +720,49 @@ Documentation Review remains in the product vision (PRD §9's four-agent archite
 
 ---
 
+## ADR-016: Coding Validation Agent Added as a Second LLM Agent (Supersedes ADR-015's Coding Validation Framing)
+
+**Status:** Decided — implemented
+**Decided:** v1.3, "Coding Validation Agent" milestone
+
+### Context
+
+ADR-015 (Phase 7) judged a separate Coding Validation LLM agent a "non-goal, not a deferral," reasoning that it would re-litigate questions the deterministic rule layer (NCCI, MUE, modifiers, code validity) already answers more reliably. That reasoning is correct for the rule-layer's specific checks, but it conflated "duplicates the rule layer" with "any LLM reasoning about coding at all." There is a class of coding judgment the rule layer cannot perform because it isn't a deterministic lookup: whether a diagnosis is specific enough to defensibly support a billed procedure, whether the diagnosis-to-procedure pairing would draw payer scrutiny, and whether an alternative diagnosis code would be more defensible. This milestone scopes a second LLM agent narrowly to that reasoning gap.
+
+ADR-015 is left unchanged (per explicit instruction for this milestone) — it remains an accurate record of the Phase 7 decision and its reasoning at the time. This ADR supersedes only the conclusion that a separate Coding Validation agent is a non-goal; it does not rewrite ADR-015's text.
+
+### Decision
+
+Add `agents/coding_validation.py` as a second LLM agent, structurally identical to the Coverage Validation Agent (`agents/coverage_validation.py`):
+
+- `validate_coding(claim) -> list[Finding]`, one Anthropic call, forced `tool_choice`, two-tool schema (`report_coding_finding` / `no_coding_concern`).
+- Reuses the Coverage Agent's exact retrieval path (ChromaDB vector store first, JSON `policy_examples.json` fallback) — no new corpus, no new vector store, no new retrieval architecture. The same LCD/NCD source material supports both coverage and coding reasoning; only the system prompt and tool framing differ.
+- Same governance pattern: no API key → `[]`; no retrieved policy → `[]`; citation_doc_id not in the retrieved set → suppressed finding; model exception → `[]`; stable finding IDs (`"cod-"` prefix, mirroring `"cov-"`).
+- The system prompt explicitly instructs the model: *"Do not identify NCCI edits, MUE violations, modifier requirements, code validity issues, or any deterministic rule-engine findings. Assume those checks have already been performed. Focus only on coding defensibility, diagnosis specificity, diagnosis-to-procedure support, and payer scrutiny risk."* This is the boundary ADR-015 was protecting — the rule layer's deterministic checks are explicitly off-limits to this agent's reasoning, not duplicated.
+- `agents/orchestrator.py` calls `validate_coding()` sequentially after `validate_coverage()` (no parallel execution), and `agents/denial_prevention.py:synthesize()` grows a third `coding_findings` parameter, combined into `RiskAssessment` identically to coverage findings.
+
+### Rationale
+
+**The rule layer vs. LLM-reasoning boundary is about determinism, not topic.** ADR-001's original principle is "deterministic lookups stay in the rule layer; LLM reasoning is for judgment the rule layer can't make." Diagnosis specificity and payer-scrutiny risk are judgment calls about defensibility, not lookups against a quarterly CSV — they were always in-scope for an LLM agent under ADR-001; ADR-015 incorrectly extended the "non-goal" framing to all coding-adjacent reasoning rather than just the rule-layer's specific deterministic checks.
+
+**Reusing Coverage Agent's exact architecture and retrieval avoids a second governance surface.** Citation grounding, the "no citation → no finding" rule, error handling, and finding-ID stability are already correct and tested in the Coverage Agent. Mirroring that pattern exactly (rather than inventing a new one) means the new agent inherits proven governance instead of re-deriving it.
+
+**`synthesize()`'s signature growing to three finding lists was anticipated, not a redesign.** ADR-015 explicitly predicted Documentation Review would "slot in as one more call... no change to `synthesize()`'s signature or logic is anticipated" beyond an added parameter — the same shape of change applies here for Coding Validation.
+
+### Alternatives Considered
+
+- **Extend the Coverage Agent's prompt to also reason about coding defensibility:** Rejected — conflates two distinct reviewer responsibilities (medical necessity vs. coding defensibility) into one prompt and one finding stream, making it harder to reason about which agent is responsible for which class of finding, and harder to evolve the two independently.
+- **Build a new retrieval path or corpus specific to coding guidance:** Rejected per this milestone's explicit constraint — the existing LCD/NCD corpus already contains the policy text relevant to both coverage and coding reasoning; a second corpus would duplicate ingestion/retrieval machinery for no retrieval-quality gain.
+- **Run Coverage and Coding agents in parallel:** Rejected per this milestone's explicit constraint — sequential execution keeps the orchestrator a simple deterministic controller (no thread/async coordination) and the cost/latency difference is not a concern at this MVP scale.
+
+### Implications
+
+- `tests/test_orchestrator.py`'s `test_no_coding_validation_placeholder_finding_ever_appears` (added under ADR-015) is removed — it asserted no `coding_validation`-rule finding ever appears, which is now false by design. Its regression-guard intent (no fabricated finding for an unimplemented capability) is superseded by real test coverage of the now-implemented agent in `tests/test_coding_validation.py` and `tests/test_orchestrator.py`'s new "Coding agent integration" tests.
+- `tests/test_orchestrator.py`'s Documentation-Review-specific placeholder guards are unaffected and remain accurate — Documentation Review is still deferred.
+- `docs/Technical_Debt_Register.md` TD-04 narrows further: only `agents/documentation_review.py` remains an unimplemented stub.
+
+---
+
 ## Tradeoffs Summary
 
 | Decision | Speed | Correctness | Explainability | Future-Proofing |
@@ -735,3 +778,4 @@ Documentation Review remains in the product vision (PRD §9's four-agent archite
 | Local policy JSON | ✅ No infra required | ➖ Curated, not comprehensive | ✅ Real source URLs shown | ✅ Same interface as future ChromaDB |
 | Intake transform separate from render | ➖ Two files instead of one | ✅ Logic testable without Streamlit | ✅ One entry point to audit | ✅ Rule engine unchanged for all intake paths |
 | Light orchestrator (defer Documentation Review) | ✅ Ships synthesis sooner | ✅ No fabricated findings | ✅ Honest "not implemented" via absence, not a fake finding | ✅ Additive when Documentation Review ships |
+| Coding Validation Agent reuses Coverage Agent's retrieval | ✅ No new corpus/vector store to build | ✅ Inherits proven citation grounding | ✅ Same governance pattern as Coverage Agent | ✅ Sequential, additive — no orchestrator redesign |
