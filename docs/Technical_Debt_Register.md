@@ -2,7 +2,7 @@
 ## Denial Prevention Copilot
 
 **Last updated:** June 2026
-**Scope:** All known technical debt as of Phase 7 light orchestrator (Unified Review — `agents/orchestrator.py` + `agents/denial_prevention.py` implemented, 308 tests passing)
+**Scope:** All known technical debt as of v1.2 (Phase 7 light orchestrator / Unified Review — `agents/orchestrator.py` + `agents/denial_prevention.py` implemented, 308 tests passing) plus v1.2 UI validation findings
 
 Priority definitions:
 - **High** — blocks a P0 PRD requirement, a core demo scenario, or correct audit behavior
@@ -416,15 +416,29 @@ All three `fetch_*()` functions were re-run live end-to-end through `chunk_docum
 
 ---
 
+#### TD-22: Retrieved Policy Transparency Limited to One Displayed Citation
+
+**Severity:** LOW / MEDIUM
+
+**Observation:** During v1.2 UI validation, Test 1 returned a valid real CMS citation, but only one cited policy was displayed. The vector retriever may retrieve both LCD 33431 (HbA1c) and NCD 98 (Blood Glucose Testing), but the UI currently shows only the model-selected primary citation.
+
+**Impact:** This does not block MVP correctness because the finding is still grounded in a retrieved CMS document. However, it limits retrieval transparency and makes it harder to show all policies considered during AI analysis.
+
+**Recommended Fix:** Display "Supporting Policies Reviewed" separately from the primary citation, including `document_id`, title, section, and effective date for the top retrieved chunks.
+
+**Status:** Deferred. Not required for v1.2 or v1.3 public portfolio readiness.
+
+---
+
 ## Debt Summary
 
 | Priority | Count | Resolved | Open |
 |---|---|---|---|
 | High | 11 | 11 (R1–R5, TD-01, TD-02, TD-03, TD-05, TD-08, TD-18) | 1 (TD-04 partial, TD-06 — see note) |
 | Medium | 8 | 3 (TD-07, TD-07b, TD-08) | 5 (TD-07a, TD-09, TD-10, TD-11, TD-12, TD-21) |
-| Low | 7 | 1 (TD-17) | 6 (TD-13, TD-14, TD-15, TD-16, TD-19, TD-20) |
+| Low | 8 | 1 (TD-17) | 7 (TD-13, TD-14, TD-15, TD-16, TD-19, TD-20, TD-22) |
 | Sprint 3 additions | 3 | 3 | 0 |
-| **Total** | **29** | **19** | **10** |
+| **Total** | **30** | **19** | **11** |
 
 Note: TD-04 (most LLM agents still stubs) is now partially resolved — orchestrator and denial_prevention are implemented (Phase 7, light scope); only Documentation Review (deferred, not a blocker) and Coding Validation (not planned as a separate agent) remain. TD-06 (two hardcoded code validity rules) remains fully open — neither was touched this phase. TD-08 (`test_orchestrator.py` stub) is now fully resolved.
 
