@@ -484,12 +484,26 @@ All three `fetch_*()` functions were re-run live end-to-end through `chunk_docum
 
 ---
 
+#### TD-27: Hosted Deployment Uses Synthetic Fallback Datasets While Local Development May Use Full CMS Datasets
+
+**Severity:** MEDIUM
+
+**Observation:** The large CMS reference files that back `rules/ncci.py`, `rules/mue_loader.py`, and `rules/icd10_loader.py` (NCCI PTP xlsx, MUE tables, ICD-10-CM order file — ~266MB combined) are gitignored and never committed. A local developer who has downloaded them gets file-backed lookups against the full real datasets (~1.73M NCCI pairs, ~98,000 ICD-10 codes). A Streamlit Cloud (or any other) deployment built directly from the public GitHub repo has none of these files and silently runs on the small synthetic fallback tables instead (1 NCCI pair, 7 MUE codes, 10 ICD-10 codes) — curated to cover exactly the sample-claim demo scenarios, so the demo still behaves correctly, but the dataset backing it is materially smaller than what local development or the README's "real CMS data" framing implies.
+
+**Impact:** No incorrect findings are produced — the synthetic fallback honestly self-labels in its citation excerpt (`"[SYNTHETIC FALLBACK: ...]"`). The risk is a documentation/expectation gap: README.md and `docs/Demo_Script.md` describe the system as running on real CMS data ("loaded from real CMS quarterly files," "it is the real CMS NCCI data loaded at startup," "~1.73M active pairs"), which is only true on a machine where the reference files were manually downloaded — not on a hosted deployment built from the repo alone.
+
+**Recommended Fix:** Either (a) add a deploy-time step that fetches the CMS reference files into `data/reference/` before the app starts, or (b) add a UI/README caveat that explicitly distinguishes "full dataset" (local, files present) from "synthetic fallback" (hosted/fresh clone) behavior, so the distinction is visible rather than implicit.
+
+**Status:** Open. Identified during Deployment Readiness Review (June 2026); not blocking deployment or public release — demo behavior is unaffected — but should be addressed before claiming "real CMS data" applies universally.
+
+---
+
 ## Debt Summary
 
 | Priority | Count | Resolved | Open |
 |---|---|---|---|
 | High | 11 | 11 (R1–R5, TD-01, TD-02, TD-03, TD-05, TD-08, TD-18) | 1 (TD-04 partial, TD-06 partial — see note) |
-| Medium | 10 | 5 (TD-07, TD-07b, TD-08, TD-09, TD-12) | 5 (TD-07a, TD-10, TD-11, TD-21, TD-24) |
+| Medium | 11 | 5 (TD-07, TD-07b, TD-08, TD-09, TD-12) | 6 (TD-07a, TD-10, TD-11, TD-21, TD-24, TD-27) |
 | Low | 11 | 1 (TD-17) | 10 (TD-13, TD-14, TD-15, TD-16 partial, TD-19, TD-20, TD-22, TD-23, TD-25, TD-26) |
 | Sprint 3 additions | 3 | 3 | 0 |
 | **Total** | **35** | **21** | **14** |
