@@ -872,7 +872,7 @@ def main() -> None:
             )
 
     st.title("Denial Prevention Copilot")
-    st.caption("AI does the research. Humans make the call.")
+    st.caption("AI researches. Humans decide.")
     st.divider()
 
     tab_review, tab_audit = st.tabs(["🔍 Review Claim", "📋 Audit Trail"])
