@@ -1,6 +1,6 @@
 # Denial Prevention Copilot
 
-Agentic pre-submission claim review that catches denial risks before a claim leaves the building. A deterministic rule layer (NCCI, MUE, NPI, code validity) and a citation-grounded Coverage Validation Agent feed a single Unified Review that synthesizes a denial risk score — every AI finding backed by a cited LCD/NCD source. Humans make every final call.
+Agentic pre-submission claim review that catches denial risks before a claim leaves the building. A deterministic rule layer (NCCI, MUE, NPI, code validity) and two citation-grounded LLM agents — Coverage Validation (medical necessity) and Coding Validation (diagnosis specificity, coding defensibility, payer scrutiny risk) — feed a single Unified Review that synthesizes a denial risk score. Every AI finding is backed by a cited LCD/NCD source. Humans make every final call.
 
 A Documentation Review Agent remains part of the product vision and roadmap but is currently deferred (not implemented, not required for this MVP) — see `docs/Roadmap.md` Phase 6.
 
@@ -29,4 +29,4 @@ pytest tests/
 
 ## Architecture
 
-See `docs/PRD_Agentic_Claims_Review_and_Denial_Prevention_Copilot.pdf` for the full product spec. High-level: deterministic rule checks (`rules/`) run before any LLM call, with a HIGH NPI finding short-circuiting downstream checks; the orchestrator (`agents/orchestrator.py`) then calls the Coverage Validation Agent and synthesizes both into one `RiskAssessment` (`agents/denial_prevention.py`) — no LLM call in synthesis; coverage findings are grounded in retrieved LCD/NCD text (`retrieval/`); all decisions land in an immutable audit log (`db/`).
+See `docs/PRD_Agentic_Claims_Review_and_Denial_Prevention_Copilot.pdf` for the full product spec. High-level: deterministic rule checks (`rules/`) run before any LLM call, with a HIGH NPI finding short-circuiting downstream checks; the orchestrator (`agents/orchestrator.py`) then calls the Coverage Validation Agent and the Coding Validation Agent sequentially and synthesizes all three sources into one `RiskAssessment` (`agents/denial_prevention.py`) — no LLM call in synthesis; both agents' findings are grounded in retrieved LCD/NCD text (`retrieval/`), reusing the same retrieval path with different reasoning prompts; all decisions land in an immutable audit log (`db/`).

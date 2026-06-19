@@ -379,7 +379,7 @@ Implement the documentation review agent that analyzes clinical note text for E/
 - `app/main.py`: note text display in claim details expander (if present)
 
 ### Dependencies
-- Phase 7 (light orchestrator) complete — done, see below. Full parallel dispatch is not a prerequisite; Phase 6 can be wired into `agents/orchestrator.py` as an additional sequential or parallel call whenever it is implemented.
+- Phase 7 (light orchestrator) and Phase 7.5 (Coding Validation Agent) complete — done, see below. Full parallel dispatch is not a prerequisite; Phase 6 can be wired into `agents/orchestrator.py` as an additional sequential or parallel call whenever it is implemented.
 - Claude Sonnet 4.6 access
 
 ### Success Criteria
@@ -426,8 +426,43 @@ Wire the rule layer and the one implemented LLM agent (Coverage Validation) into
 - UI supports a coherent one-click review flow ✅
 - All 308 tests pass ✅
 
+### Scope note (superseded by v1.3 — see Phase 7.5 below)
+At the time this phase was scoped, Coding Validation was judged a non-goal as a separate LLM agent — doing so would duplicate the rule layer's NCCI/MUE/code_validity checks. v1.3 (Phase 7.5) revisited this: a Coding Validation Agent was implemented, scoped narrowly to reasoning the rule layer cannot perform (diagnosis specificity, coding defensibility, payer scrutiny risk), explicitly excluding NCCI/MUE/modifier/code-validity reasoning. See `docs/Architecture_Decisions.md` ADR-016. Documentation Review remains a deferred future capability (Phase 6 above), not an MVP blocker.
+
+---
+
+## Phase 7.5 — Coding Validation Agent (v1.3) ✅ Complete
+
+**Tests:** 349 tests, all passing (+41)
+
+### Objectives
+Add a second LLM agent — Coding Validation — scoped to coding defensibility judgment the deterministic rule layer cannot make: diagnosis specificity, diagnosis-to-procedure support, payer scrutiny risk, and alternative diagnosis suggestions. Explicitly excludes NCCI edits, MUE limits, modifier requirements, and code validity — those remain rule-layer responsibilities.
+
+### Deliverables
+- `agents/coding_validation.py`: full implementation, mirroring `agents/coverage_validation.py`'s architecture exactly
+  - `validate_coding(claim) -> list[Finding]`, one Anthropic call, forced `tool_choice`, `report_coding_finding`/`no_coding_concern` tool schema
+  - Reuses the Coverage Agent's retrieval path unchanged (ChromaDB vector store first, JSON `policy_examples.json` fallback) — no new corpus, no new vector store
+  - Same governance: no API key → `[]`; citation_doc_id not in retrieved set → suppressed finding; model exception → `[]`; stable `"cod-"`-prefixed finding IDs
+- `agents/orchestrator.py`: calls `validate_coding()` sequentially after `validate_coverage()` (no parallel execution); adds the "Coding validation — LLM coding defensibility review" label to `checks_run`
+- `agents/denial_prevention.py`: `synthesize()` grew a third `coding_findings` parameter, combined into `RiskAssessment` identically to coverage findings; scoring/escalation logic unchanged
+- `app/main.py`: no changes — the existing `_render_full_review_results()` already renders any finding in `RiskAssessment.findings` generically; coding findings appear automatically through the Full Review path. The separate "Run AI Coverage Analysis" quick-check button remains Coverage-only by design.
+- `tests/test_coding_validation.py`: new, 27 tests mirroring `test_coverage_validation.py` (finding present, no-concern path, citation grounding success/suppression, model exception, empty retrieval, vector/JSON fallback, excerpt cleanup — no real Anthropic calls)
+- `tests/test_denial_prevention.py`: 4 new tests for coding findings in synthesis
+- `tests/test_orchestrator.py`: extended to mock both agents; 10 net-new tests for coding-agent integration (called/not-called on short-circuit, checks_run label, score/escalation driven by coding findings, sequential call order)
+
+### Dependencies
+- Phase 7 (light orchestrator + synthesis) complete
+
+### Success Criteria
+- Full suite passes (349/349) ✅
+- Coverage Agent behavior unchanged ✅
+- Coding findings appear in Full Review and `RiskAssessment` ✅
+- Deterministic synthesis remains intact (no LLM call in `denial_prevention.py`) ✅
+- No governance regressions ✅
+- No real Anthropic calls in tests ✅
+
 ### Scope note
-Coding Validation is not built as a separate LLM agent at all in this milestone — doing so would duplicate the rule layer's NCCI/MUE/code_validity checks, which are already deterministic and tested. Documentation Review remains a deferred future capability (Phase 6 above), not an MVP blocker.
+Documentation Review Agent, an LLM-based Denial Prevention summary/narrative agent, parallel execution, and additional database tables were explicitly out of scope for this milestone and remain deferred. See `docs/Architecture_Decisions.md` ADR-016.
 
 ---
 
@@ -530,6 +565,7 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 | 5v2 — Coverage Agent (ChromaDB) | ✅ Complete (Session 1D) | Vector-first retrieval with JSON fallback; index not pre-seeded | P0 |
 | 6 — Documentation Agent | ⏸️ Deferred / Under Evaluation | Clinical note analysis — not an MVP blocker | P1 |
 | 7 — Light Orchestrator + Synthesis | ✅ Complete (light scope) | Unified Review: rule layer + Coverage Agent → RiskAssessment, 308 tests | P0 |
+| 7.5 — Coding Validation Agent (v1.3) | ✅ Complete | Second LLM agent: coding defensibility, diagnosis specificity, payer scrutiny risk; 349 tests | P0 |
 | 8 — Evaluation | 🔜 | Golden set, precision/recall | P0 metric |
 | 9 — Portfolio Publication | 🔜 | Public README, screenshots | Portfolio |
 | 10 — Streamlit Cloud | 🔜 | Live public URL | Portfolio |
