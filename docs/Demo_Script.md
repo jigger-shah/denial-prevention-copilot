@@ -487,4 +487,4 @@ Claims review is the entry point. The same governed agent architecture, the same
 The enterprise automation industry is moving toward pre-submission intelligence — denial prevention and prior-authorization agents are an active product category. This project is a transparent reference implementation of the decision layer underneath that category: evidence-grounded findings, public data only, every recommendation citable.
 
 ### The human-in-loop is a feature, not a limitation
-Revenue cycle specialists don't want an AI that submits claims for them — they want an AI that does the research so they can make better decisions faster. "AI researches, humans decide" is not a safety disclaimer; it's the value proposition for the primary user persona.
+Revenue cycle specialists don't want an AI that submits claims for them — they want an AI that does the research so they can make better decisions faster. "AI researches. Humans decide." is not a safety disclaimer; it's the value proposition for the primary user persona.

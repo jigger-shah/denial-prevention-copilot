@@ -1,7 +1,7 @@
 # Development Roadmap
 ## Denial Prevention Copilot
 
-**PRD vision:** An explainable, agentic pre-submission copilot that prevents denials before they happen — AI researches, humans decide.
+**PRD vision:** An explainable, agentic pre-submission copilot that prevents denials before they happen — AI researches. Humans decide.
 
 **Roadmap philosophy:** Each phase builds on the previous one without breaking it. Governance infrastructure is built before the AI it governs. Deterministic correctness is established before generative reasoning is added. Every phase ships working, testable software.
 
