@@ -14,6 +14,8 @@
 > **Update (v1.4, Golden Set Evaluation Framework, post-2026-06-18):** "Gap 6: Evaluation Framework (Phase 8)" below is now stale. `evaluation/golden_claims.json` (14 labeled synthetic claims), `evaluation/metrics.py`, `evaluation/harness.py`, and `evaluation/run_evaluation.py` implement the golden-set measurement the PRD's ≥90%/≥85% targets require — built as a standalone CLI module rather than a `pytest -m golden` marker (see `docs/Roadmap.md` Phase 8 "Deviation from original plan"). Offline (rule layer only, no API calls): 1.00 precision / 1.00 recall / 1.00 F1. Live (real `claude-haiku-4-5` calls): Rule Engine still 1.00/1.00/1.00; Coverage/Coding Agents 0.30/0.25 precision at 1.00 recall — tracked as `docs/Technical_Debt_Register.md` TD-24 (open). 375 tests passing (up from 349).
 >
 > **Update (v1.5, ICD-10 Expansion, post-2026-06-19):** The "ICD-10-CM code validity" row in the PRD Traceability Matrix below, and "Gap 1"'s ICD-10-CM bullet, are now stale. `rules/icd10_loader.py` (file-backed parser for the real CMS ICD-10-CM FY2026 order file, ~98,000 codes, gitignored like NCCI/MUE) and `rules/icd10.py` (`check_icd10_validity()` — `icd10_invalid` HIGH finding for codes not in the dataset, `icd10_unspecified` MEDIUM finding for codes whose CMS description contains "unspecified") are now wired into `rules/rule_engine.py`, respecting the existing HIGH-NPI short-circuit. The pre-existing `dx_procedure_conflict`/`missing_modifier_25` rules in `rules/code_validity.py` were left untouched — this is a new, separate check, not a replacement of those two rules. Two golden claims (`GOLD-009`, `GOLD-011`) needed their `expected_findings` updated since their diagnosis codes (`J06.9`, `R10.9`) are themselves unspecified per CMS; Rule Engine offline precision/recall/F1 remains 1.00/1.00/1.00. See `docs/Roadmap.md` Phase 8.5. 404 tests passing (up from 375).
+>
+> **Update (v1.6, Public Release Hardening, post-2026-06-19):** This sprint did not add product features — it closed the gap between "works on the developer's machine with a real `.env`" and "works correctly on a fresh public clone with no API key." `agents/orchestrator.py:_ai_enabled()` now gates both agents before either is called (closes TD-12); `app/main.py` shows an explicit "⚠ AI Agents Disabled" warning naming `ANTHROPIC_API_KEY` instead of failing silently; three sample claims (`CLM-001`, `CLM-002`, `CLM-005`) show pre-generated, clearly labeled AI findings via `data/synthetic/cached_ai_demo_artifacts.json` when no key is present, so the AI layer is previewable without a live call; `agents/run_logger.py` adds local structured logging for each orchestrator-dispatched check (partially closes TD-16). A repository-wide hygiene pass removed interview/recruiter/hiring-manager/UiPath framing and a personal-name byline from authored docs (the original PRD PDF's two UiPath press-release citation URLs were left as-is — it's the unmodified source spec, not authored prose). `README.md` was rewritten with portfolio/demo framing, a "not for clinical or billing use" disclosure, and an Architecture Overview section. See `docs/Roadmap.md` Phase 8.6 and `docs/Technical_Debt_Register.md` (TD-12 closed, TD-16 partial). 426 tests passing (up from 404). The readiness scores in Section 7 below predate this sprint and were not revised — this sprint's scope was release-safety, not the underlying feature maturity those scores measure.
 
 ---
 
@@ -522,13 +524,13 @@ Scores are 0–100. 100 = production-quality, no gaps for the stated purpose.
 
 **What works:** The app runs end-to-end with two claim modes. The NCCI finding now cites the actual CMS source file (ccipra-v322r0-f4.xlsx), version (v322r0), and effective date (2026-07-01) — this is fully verifiable and distinguishes the project from one using made-up citations. The governance story (citation-required, append-only audit, override enforcement with mandatory reason) is compact and compelling. Manual claim intake lets the demo use any coding scenario, not just 5 fixed examples.
 
-**What's missing:** All LLM agents are stubs. A technical interviewer who asks "show me the coverage agent" finds a docstring. Code validity findings come from 2 hardcoded rules, not a reference file. No RAG pipeline. The worked example produces exactly 3 findings every time — reviewers who dig deeper will notice there's no adaptive behavior.
+**What's missing:** All LLM agents are stubs. A technical reviewer who asks "show me the coverage agent" finds a docstring. Code validity findings come from 2 hardcoded rules, not a reference file. No RAG pipeline. The worked example produces exactly 3 findings every time — reviewers who dig deeper will notice there's no adaptive behavior.
 
 **Ceiling:** One working LLM agent with a real LCD citation would score 75+. The governance and NCCI story can carry the demo for 2-3 minutes; the stub layer becomes visible under deeper probing.
 
 ---
 
-### PM Interview Readiness: 67 / 100
+### PM Portfolio Readiness: 67 / 100
 
 **What works:** The PRD traceability matrix maps 25+ requirements to P0/P1/P2 and tracks completion state per sprint. 11 ADRs document context, tradeoffs, and explicit deferral triggers. The Technical Debt Register explains why each item is deferred, not just that it is. The governance-first sequencing (audit before agents) shows PM judgment about risk ordering. NCCI completion demonstrates iterative delivery against a roadmap — Phase 3 is visibly in progress, not stalled.
 
@@ -538,7 +540,7 @@ Scores are 0–100. 100 = production-quality, no gaps for the stated purpose.
 
 ---
 
-### Director of Engineering Interview Readiness: 65 / 100
+### Engineering Portfolio Readiness: 65 / 100
 
 **What works:** Architecture decisions are documented with context and tradeoffs (11 ADRs including ADR-011 on NCCI file-backed loading with performance characteristics). The rule-before-LLM constraint is enforced. The append-only audit pattern is production-grade. SHA-256 finding IDs are stable. 127 tests passing, including substantive NCCI loader tests (not stubs). `functools.lru_cache` on `_build_edit_table()` with documented first-load latency (~54s) and test isolation strategy (`_clear_ncci_cache()`) shows production thinking.
 
@@ -548,7 +550,7 @@ Scores are 0–100. 100 = production-quality, no gaps for the stated purpose.
 
 ---
 
-### AI PM Interview Readiness: 60 / 100
+### AI PM Portfolio Readiness: 60 / 100
 
 **What works:** The RAG architecture is correctly specified (chunking → ChromaDB → LLM reasoning → cited finding). The citation-first constraint ("no citation → no finding") shows understanding of LLM hallucination risk in healthcare. Policy repository interface designed for ChromaDB drop-in replacement — a thoughtful abstraction. The NCCI loader demonstrates data pipeline thinking: dtype handling for integer-stored Excel cells, usecols optimization (5 of 7 columns), active-pair filtering, caching strategy, and graceful fallback — all documented.
 
@@ -618,7 +620,7 @@ Scores are 0–100. 100 = production-quality, no gaps for the stated purpose.
 
 **Why finish Phase 3 before Phase 4:**
 
-The Coverage Validation Agent (Phase 5) only adds value when the deterministic rule layer it complements is credible. An interviewer who sees a real NCCI bundling finding but no MUE check will ask "what about unit limits?" — and the answer today is "not implemented." More practically, Phase 3 is the last no-LLM, no-infrastructure sprint: MUE, NPI, and ICD-10-CM are deterministic file lookups, testable without network access or API keys. Completing Phase 3 takes the deterministic layer from ~35% done to ~95% done and resolves 3 of the 5 remaining HIGH debt items.
+The Coverage Validation Agent (Phase 5) only adds value when the deterministic rule layer it complements is credible. A reviewer who sees a real NCCI bundling finding but no MUE check will ask "what about unit limits?" — and the answer today is "not implemented." More practically, Phase 3 is the last no-LLM, no-infrastructure sprint: MUE, NPI, and ICD-10-CM are deterministic file lookups, testable without network access or API keys. Completing Phase 3 takes the deterministic layer from ~35% done to ~95% done and resolves 3 of the 5 remaining HIGH debt items.
 
 **Remaining Phase 3 work:**
 
@@ -650,7 +652,7 @@ The Coverage Validation Agent (Phase 5) only adds value when the deterministic r
 
 ## 10. Recommended Development Roadmap
 
-Phases in priority order, reflecting the dependency chain and interview/demo impact at each step.
+Phases in priority order, reflecting the dependency chain and demo impact at each step.
 
 ### Phase 3: Complete Deterministic Layer (1–2 weeks remaining) — IN PROGRESS
 
@@ -721,23 +723,23 @@ Add CI (GitHub Actions: tests + linting). Write README with architecture diagram
 
 **Yes, with caveats.** The project demonstrates engineering judgment, healthcare domain expertise, and governance sophistication that most PM portfolios lack entirely. 11 ADRs, a Technical Debt Register with explicit deferral rationale, and a phased roadmap with shipped milestone commits are signals of professional rigor. The NCCI PTP rule engine now uses real CMS data (v322r0, ~1.73M pairs) — one of the project's three demo findings is now fully verifiable and citable, not synthetic.
 
-However, the AI layer — the entire point of the project — does not exist yet. A knowledgeable interviewer who digs past the UI will find stubs in `agents/`. The honest framing today is: "I built the governance and rule layer; the LLM agents are the next phase." That is a defensible position if stated directly and proactively.
+However, the AI layer — the entire point of the project — does not exist yet. A knowledgeable reviewer who digs past the UI will find stubs in `agents/`. The honest framing today is: "I built the governance and rule layer; the LLM agents are the next phase." That is a defensible position if stated directly and proactively.
 
 **Minimum threshold for unqualified portfolio use:** Complete Phase 5 (first working LLM agent with real LCD citations). That transforms the narrative from "I designed an AI system" to "I built one."
 
 ---
 
-### Is this interview-worthy today?
+### Is this portfolio-ready today?
 
-**Yes, for the right interview.** Best suited for interviews where you want to demonstrate:
+**Yes, for the right audience.** Best suited for demos where you want to demonstrate:
 - Healthcare RCM domain knowledge (NCCI, MUE, NPI, LCD/NCD, E/M coding)
 - AI governance design (citation-first, audit trail, human-in-loop)
 - Engineering judgment under constraint (rules-before-LLM, deterministic over generative where possible)
 - PM-level thinking (PRD → ADRs → tech debt register → phased roadmap)
 
-Less suited for interviews where the evaluator will probe AI implementation depth (prompt engineering, RAG quality, model evaluation). For those interviews, wait until Phase 5 ships.
+Less suited for demos where the evaluator will probe AI implementation depth (prompt engineering, RAG quality, model evaluation). For those, wait until Phase 5 ships.
 
-**Best use today:** PM interviews, product design discussions, healthcare AI governance conversations.
+**Best use today:** PM portfolio discussions, product design discussions, healthcare AI governance conversations.
 
 ---
 

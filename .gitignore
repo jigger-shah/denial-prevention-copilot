@@ -34,6 +34,9 @@ MANIFEST
 pip-log.txt
 pip-delete-this-directory.txt
 
+# Structured run logs (local only, no PHI — see agents/run_logger.py)
+logs/
+
 # Unit test / coverage reports
 htmlcov/
 .tox/

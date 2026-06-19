@@ -30,6 +30,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from rules.models import Citation, Finding
 from rules.rule_engine import load_claim, review_claim, overall_risk, CHECKS_RUN
 from agents.coverage_validation import validate_coverage
 from agents.orchestrator import run_review
@@ -51,6 +52,7 @@ from app.claim_intake import (
 _AI_ENABLED: bool = bool(os.getenv("ANTHROPIC_API_KEY"))
 
 CLAIMS_FILE = pathlib.Path(__file__).parent.parent / "data" / "synthetic" / "sample_claims.json"
+CACHED_AI_DEMO_FILE = pathlib.Path(__file__).parent.parent / "data" / "synthetic" / "cached_ai_demo_artifacts.json"
 MODEL_VERSION = "rule_layer_v0.1"
 PROMPT_VERSION = "n/a"
 CONFIDENCE_REVIEW_THRESHOLD = 0.70
@@ -82,6 +84,40 @@ _SL_HEADERS = ["CPT / HCPCS", "Mod 1", "Mod 2", "Units", "ICD-10 (1)", "ICD-10 (
 def load_claims() -> list[dict]:
     with open(CLAIMS_FILE) as f:
         return json.load(f)
+
+
+@st.cache_data
+def load_cached_ai_demo_artifacts() -> dict:
+    """
+    Pre-generated AI agent findings (data/synthetic/cached_ai_demo_artifacts.json),
+    captured from real validate_coverage()/validate_coding() runs. Shown only when
+    ANTHROPIC_API_KEY is absent, so public users can preview representative AI
+    output for the designated sample claims without making a live API call.
+    """
+    with open(CACHED_AI_DEMO_FILE) as f:
+        return json.load(f)
+
+
+def _cached_ai_findings_for(claim_id: str) -> list[Finding] | None:
+    artifacts = load_cached_ai_demo_artifacts()
+    entry = artifacts.get(claim_id)
+    if not entry:
+        return None
+    findings = []
+    for raw in entry["findings"]:
+        citation = Citation(**raw["citation"])
+        findings.append(
+            Finding(
+                rule=raw["rule"],
+                severity=raw["severity"],
+                issue=raw["issue"],
+                recommendation=raw["recommendation"],
+                citation=citation,
+                confidence=raw["confidence"],
+                source=raw["source"],
+            )
+        )
+    return findings
 
 
 @st.cache_resource
@@ -312,6 +348,12 @@ def _render_full_review_results(risk_assessment, claim_id: str, reviewer_name: s
 def _render_ai_section(claim, claim_id: str, reviewer_name: str, repo: AuditRepository) -> None:
     """Render the AI Coverage Analysis button and its findings below rule results."""
     if not _AI_ENABLED:
+        st.divider()
+        st.warning(
+            "⚠️ **AI Agents Disabled**\n\n"
+            "Provide `ANTHROPIC_API_KEY` to enable the Coverage and Coding agents.\n\n"
+            "Deterministic rule-engine review remains available."
+        )
         return
 
     st.divider()
@@ -346,6 +388,50 @@ def _render_ai_section(claim, claim_id: str, reviewer_name: str, repo: AuditRepo
             st.session_state.pop("ai_findings", None)
             st.session_state.pop("ai_reviewed", None)
             st.rerun()
+
+
+def _render_cached_ai_demo(claim_id: str) -> None:
+    """
+    When AI is disabled (no ANTHROPIC_API_KEY), show pre-generated AI findings for
+    designated sample claims so public users can preview representative agent
+    output. Read-only — no Accept/Override/Save, since these findings were not
+    produced by a live run of this session. Never shown when AI is enabled; the
+    live agents always take priority over cached artifacts.
+    """
+    if _AI_ENABLED:
+        return
+
+    cached_findings = _cached_ai_findings_for(claim_id)
+    if not cached_findings:
+        return
+
+    st.divider()
+    st.info(
+        "📋 **Pre-generated demonstration results** — AI is currently disabled "
+        "(no `ANTHROPIC_API_KEY`). The findings below were captured in advance "
+        "from a real run of the Coverage and Coding agents against this sample "
+        "claim, so you can preview representative AI output without making a "
+        "live API call. Provide your own key to run live AI analysis instead."
+    )
+    for finding in cached_findings:
+        style = _SEVERITY_STYLE.get(finding.severity, {"border": "#6b7280", "card_bg": "#f9fafb"})
+        st.markdown(
+            f'<div style="border-left:4px solid {style["border"]};'
+            f'background:{style["card_bg"]};padding:12px 16px;'
+            f'border-radius:0 6px 6px 0;margin-bottom:4px;">'
+            f'{_severity_badge(finding.severity)}'
+            f'&nbsp;&nbsp;<strong>{finding.issue}</strong>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        st.write(f"**Recommendation:** {finding.recommendation}")
+        st.caption(
+            f"Citation: {_citation_caption(finding.citation)} &nbsp;|&nbsp; "
+            f"Confidence: {finding.confidence:.0%}"
+        )
+        with st.expander("📄 View policy detail"):
+            _render_citation_detail(finding.citation)
+        st.divider()
 
 
 def _clear_review_state() -> None:
@@ -707,6 +793,7 @@ def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
             reviewer_name=reviewer_name,
             repo=repo,
         )
+        _render_cached_ai_demo(claim_dict["claim_id"])
 
     st.caption("or run checks separately:")
     if st.button("🔍 Review Claim (rule layer only)", key="sample_review_btn"):
@@ -747,6 +834,7 @@ def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
             reviewer_name=reviewer_name,
             repo=repo,
         )
+        _render_cached_ai_demo(stored_dict["claim_id"])
 
 
 # ---------------------------------------------------------------------------
@@ -772,13 +860,15 @@ def main() -> None:
         st.caption("Required to save decisions to the audit log.")
 
         st.divider()
-        st.header("AI Coverage Analysis")
+        st.header("AI Agents")
         if _AI_ENABLED:
-            st.success("✅ AI enabled")
+            st.success("✅ AI enabled — Coverage and Coding agents active")
         else:
             st.warning(
-                "AI Coverage Analysis disabled. "
-                "Add `ANTHROPIC_API_KEY` to your `.env` file to enable."
+                "⚠️ AI Agents Disabled\n\n"
+                "Coverage and Coding agents are off. Add `ANTHROPIC_API_KEY` "
+                "to your `.env` file to enable them.\n\n"
+                "Deterministic rule-engine review remains available."
             )
 
     st.title("Denial Prevention Copilot")

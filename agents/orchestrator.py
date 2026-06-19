@@ -27,9 +27,12 @@ code, coverage, and coding alone.
 
 from __future__ import annotations
 
+import os
+
 from agents import denial_prevention
 from agents.coding_validation import validate_coding
 from agents.coverage_validation import validate_coverage
+from agents.run_logger import timed_run
 from rules.models import ClaimIn, Finding, RiskAssessment
 from rules.rule_engine import CHECKS_RUN, review_claim
 
@@ -37,18 +40,29 @@ _COVERAGE_CHECK_LABEL = "Coverage validation — LLM medical necessity review (R
 _CODING_CHECK_LABEL = "Coding validation — LLM coding defensibility review"
 
 
+def _ai_enabled() -> bool:
+    """True iff ANTHROPIC_API_KEY is set. No Anthropic client is constructed otherwise."""
+    return bool(os.getenv("ANTHROPIC_API_KEY"))
+
+
 def run_review(claim: ClaimIn) -> RiskAssessment:
     """Run the full claim review: rule layer, then coverage + coding agents if applicable, then synthesis."""
-    rule_findings = review_claim(claim)
+    with timed_run(claim_id=claim.claim_id, agent="rule_layer") as result:
+        rule_findings = review_claim(claim)
+        result["finding_count"] = len(rule_findings)
 
-    if _rule_layer_short_circuited(rule_findings):
-        checks_run = [CHECKS_RUN[0]]
+    if _rule_layer_short_circuited(rule_findings) or not _ai_enabled():
+        checks_run = [CHECKS_RUN[0]] if _rule_layer_short_circuited(rule_findings) else list(CHECKS_RUN)
         coverage_findings: list[Finding] = []
         coding_findings: list[Finding] = []
     else:
         checks_run = [*CHECKS_RUN, _COVERAGE_CHECK_LABEL, _CODING_CHECK_LABEL]
-        coverage_findings = validate_coverage(claim)
-        coding_findings = validate_coding(claim)
+        with timed_run(claim_id=claim.claim_id, agent="coverage_validation") as result:
+            coverage_findings = validate_coverage(claim)
+            result["finding_count"] = len(coverage_findings)
+        with timed_run(claim_id=claim.claim_id, agent="coding_validation") as result:
+            coding_findings = validate_coding(claim)
+            result["finding_count"] = len(coding_findings)
 
     return denial_prevention.synthesize(rule_findings, coverage_findings, coding_findings, checks_run)
 

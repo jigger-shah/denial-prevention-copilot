@@ -1,5 +1,5 @@
 # Demo Script — Production Validated
-**DenialPreventionCopilot** | Portfolio, Interview, and Stakeholder Demonstrations  
+**DenialPreventionCopilot** | Portfolio and Stakeholder Demonstrations  
 Production validated: 2026-06-16 | Model: claude-sonnet-4-5-20250929
 
 ---
@@ -9,13 +9,13 @@ Production validated: 2026-06-16 | Model: claude-sonnet-4-5-20250929
 1. [Executive Demo Overview](#1-executive-demo-overview)
 2. [Architecture Overview](#2-architecture-overview)
 3. [30-Second Elevator Pitch](#3-30-second-elevator-pitch)
-4. [2-Minute Interview Demo](#4-2-minute-interview-demo)
+4. [2-Minute Demo](#4-2-minute-demo)
 5. [5-Minute Executive Demo](#5-5-minute-executive-demo)
 6. [Demo Scenario A — Labs with Preventive Diagnosis](#6-demo-scenario-a--labs-with-preventive-diagnosis)
 7. [Demo Scenario B — Diabetes Management Visit](#7-demo-scenario-b--diabetes-management-visit)
 8. [AI Governance Talking Points](#8-ai-governance-talking-points)
 9. [AI PM Talking Points](#9-ai-pm-talking-points)
-10. [Common Interview Questions and Suggested Answers](#10-common-interview-questions-and-suggested-answers)
+10. [Common Questions and Suggested Answers](#10-common-questions-and-suggested-answers)
 11. [Portfolio Positioning](#11-portfolio-positioning)
 12. [Production Validation Results](#12-production-validation-results)
 13. [Miscellaneous Talking Points](#13-miscellaneous-talking-points)
@@ -112,9 +112,9 @@ Most coding tools check for code validity (is 99214 a real CPT code?) but not me
 
 ---
 
-## 4. 2-Minute Interview Demo
+## 4. 2-Minute Demo
 
-**Audience:** Hiring manager or technical interviewer  
+**Audience:** Technical or product stakeholder  
 **Format:** Verbal walkthrough, optionally with the running app visible
 
 ---
@@ -234,9 +234,9 @@ Citation Grounding: PASSED
   Cited doc_id was present in retrieved set of 7 policies
 ```
 
-### Interviewer Angles This Scenario Demonstrates
+### Talking Points This Scenario Demonstrates
 
-| Interviewer Focus | What to Highlight |
+| Discussion Focus | What to Highlight |
 |---|---|
 | AI reasoning quality | Model correctly distinguished between preventive and problem-oriented billing — a nuance that requires reading the LCD |
 | Governance | Citation grounding enforced in code, not prompt; finding suppressed if hallucinated doc_id |
@@ -351,7 +351,7 @@ A clean scenario is as important as a flagged one. It confirms:
 
 The design constraint in `CLAUDE.md`: "No citation → no finding." This was established before writing the first line of agent code, not added after the fact. In healthcare AI, governance is not a feature you bolt on — it has to be structural.
 
-**Interview application:** "Before we built the coverage agent, we wrote the citation grounding requirement into the architecture document. The agent code was written to enforce it in code, not in the prompt."
+**Talking point:** "Before we built the coverage agent, we wrote the citation grounding requirement into the architecture document. The agent code was written to enforce it in code, not in the prompt."
 
 ---
 
@@ -359,7 +359,7 @@ The design constraint in `CLAUDE.md`: "No citation → no finding." This was est
 
 `_MAX_POLICIES = 3` in `coverage_validation.py` is not a technical constraint — it's a product decision. Sending 10 policies per call would produce more complete analysis but increase latency and token cost by 3x. Three policies, chosen by relevance, captures the most actionable signal.
 
-**Interview application:** "Every LLM call has a cost profile. The PM has to decide how much context is worth sending and build that as a system constant, not leave it to the engineer to guess."
+**Talking point:** "Every LLM call has a cost profile. The PM has to decide how much context is worth sending and build that as a system constant, not leave it to the engineer to guess."
 
 ---
 
@@ -367,7 +367,7 @@ The design constraint in `CLAUDE.md`: "No citation → no finding." This was est
 
 The `report_coverage_finding` tool schema enforces: issue (string), recommendation (string), severity (HIGH/MEDIUM/LOW/INFO), confidence (float), citation_doc_id (string), citation_section (string), citation_excerpt (string). These aren't just engineering conveniences — they're the fields the UI needs to display a useful finding and the audit log needs for compliance.
 
-**Interview application:** "The tool schema was designed by asking: what does the reviewer need to see, and what does the audit trail need to capture? The model's output is shaped by the product requirement."
+**Talking point:** "The tool schema was designed by asking: what does the reviewer need to see, and what does the audit trail need to capture? The model's output is shaped by the product requirement."
 
 ---
 
@@ -387,7 +387,7 @@ The current system uses a JSON file as its policy store. The architecture is des
 
 ---
 
-## 10. Common Interview Questions and Suggested Answers
+## 10. Common Questions and Suggested Answers
 
 ### "How do you know the AI isn't hallucinating?"
 
@@ -542,7 +542,7 @@ The app requires a valid API key in `.env`. Without it, `_AI_ENABLED = False` in
 4. **Point to the citation.** The LCD section and effective date are what makes this credible to a healthcare audience. Make them visible.
 5. **Explain what would have happened without the tool.** "This claim would have gone out, gotten denied in 30 days, and triggered a rework cycle."
 6. **Don't over-promise AI confidence.** Confidence 0.85 means the model was fairly sure, not certain. The human reviewer is the final decision-maker.
-7. **Have the architecture diagram ready.** Interviewers in AI PM roles want to see that you understand the system, not just the UI.
+7. **Have the architecture diagram ready.** Viewers evaluating AI product design want to see that you understand the system, not just the UI.
 8. **Pre-clear the audit log before the demo.** A fresh audit log is easier to explain than one with 20 prior entries from testing.
 9. **Know the deferred items cold.** "We didn't build X" followed by a clear reason ("because Y was sufficient to validate the core loop") is stronger than silence.
 10. **End with scale.** "At 500 claims a week, a 2% catch rate is 10 flagged claims. At $10 rework cost each, that's $100/week in prevented rework — from one LCD pattern."

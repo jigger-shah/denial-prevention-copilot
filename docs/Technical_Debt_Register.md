@@ -235,13 +235,15 @@ Add boundary validation in `load_claim()` for format checks (5-digit CPT, ICD-10
 
 ---
 
-#### TD-12: `ANTHROPIC_API_KEY` Guard (Partially Resolved Sprint 9)
+#### TD-12: `ANTHROPIC_API_KEY` Guard — RESOLVED v1.6
 
-**Resolution (Partial):** Sprint 9 added `load_dotenv()` at startup in `app/main.py`, the `_AI_ENABLED = bool(os.getenv("ANTHROPIC_API_KEY"))` flag computed at import time, and a sidebar warning ("AI Coverage Analysis disabled. Add `ANTHROPIC_API_KEY` to your `.env` file to enable.") when the key is absent. Coverage agent calls are gated on `_AI_ENABLED` — no SDK call is made if the key is missing. `.env.example` added to the repository with setup instructions.
+**Resolution (Sprint 9, partial):** Sprint 9 added `load_dotenv()` at startup in `app/main.py`, the `_AI_ENABLED = bool(os.getenv("ANTHROPIC_API_KEY"))` flag computed at import time, and a sidebar warning when the key is absent. Coverage agent calls are gated on `_AI_ENABLED` at the call site — no SDK call is made if the key is missing. `.env.example` added to the repository with setup instructions.
 
-**Remaining:** The sidebar warning is informational, not blocking. A user who has the key but has it set incorrectly (wrong format, revoked) will get a runtime error from the SDK when the AI button is clicked rather than a startup guard. Adding a key format validation at startup (`api_key.startswith("sk-ant-")`) would improve UX for this case.
+**Resolution (v1.6, closes the gap):** The guard moved up a layer — `agents/orchestrator.py:_ai_enabled()` checks `ANTHROPIC_API_KEY` *before* calling either agent, so a missing key now skips `validate_coverage()`/`validate_coding()` entirely rather than relying solely on each agent's internal early-return. `checks_run` on the returned `RiskAssessment` reflects only what actually executed. The sidebar and the in-page "AI Coverage Analysis" section both show an explicit "⚠ AI Agents Disabled" warning naming `ANTHROPIC_API_KEY` and stating that deterministic rule-engine review remains available. Verified end-to-end with no key set: app launches with no exception, deterministic review and audit save still work, no `anthropic.Anthropic` client is ever constructed (`tests/test_orchestrator.py`, `tests/test_app_ai_disabled.py`).
 
-**Planned Sprint:** Resolved for the no-key case; SDK-level key validation optional in a future sprint.
+**Remaining (not blocking):** A user who has a key but it's malformed or revoked still gets a runtime error from the SDK on first live call rather than a startup-time format check (`api_key.startswith("sk-ant-")`). Left open as a UX nicety, not a release blocker — see TD-12b below if/when picked up.
+
+**Planned Sprint:** Resolved.
 
 ---
 
@@ -302,7 +304,7 @@ Add boundary validation in `load_claim()` for format checks (5-digit CPT, ICD-10
 
 ---
 
-#### TD-16: No Application Logging
+#### TD-16: No Application Logging — PARTIALLY RESOLVED v1.6
 
 **Description:** The application has no structured logging. Errors from the rule engine, database operations, or (eventually) agent calls are not captured anywhere except the Streamlit error display.
 
@@ -312,9 +314,11 @@ Add boundary validation in `load_claim()` for format checks (5-digit CPT, ICD-10
 - Debug information is lost between sessions.
 - No way to audit rule engine behavior or diagnose intermittent errors.
 
-**Recommended Fix:** Add Python `logging` at DEBUG level to rule modules and `AuditRepository`. One line per check run, one line per DB write. No need for a log aggregation service for a portfolio project.
+**Resolution (v1.6):** `agents/run_logger.py` adds local structured logging for each check the orchestrator dispatches — rule layer, coverage agent, coding agent. One JSON line per check, written to `logs/agent_runs.jsonl` (gitignored, local only): `timestamp`, `claim_id`, `agent`, `finding_count`, `success`, `latency_ms`, and `error` on failure. Wired into `agents/orchestrator.py:run_review()` via the `timed_run()` context manager. No external observability platform — this is intentionally a local file, not a metrics backend.
 
-**Planned Sprint:** Phase 5 (before agents generate meaningful logs)
+**Remaining gap:** `db/audit_repository.py` writes (`save_decision()`) and rule-module-internal errors are still not logged — only the three orchestrator-dispatched checks are covered. Closing that remainder is deferred; not required for public release.
+
+**Planned Sprint:** Remainder deferred — no committed sprint.
 
 ---
 
@@ -485,12 +489,12 @@ All three `fetch_*()` functions were re-run live end-to-end through `chunk_docum
 | Priority | Count | Resolved | Open |
 |---|---|---|---|
 | High | 11 | 11 (R1–R5, TD-01, TD-02, TD-03, TD-05, TD-08, TD-18) | 1 (TD-04 partial, TD-06 partial — see note) |
-| Medium | 10 | 4 (TD-07, TD-07b, TD-08, TD-09) | 6 (TD-07a, TD-10, TD-11, TD-12, TD-21, TD-24) |
-| Low | 11 | 1 (TD-17) | 10 (TD-13, TD-14, TD-15, TD-16, TD-19, TD-20, TD-22, TD-23, TD-25, TD-26) |
+| Medium | 10 | 5 (TD-07, TD-07b, TD-08, TD-09, TD-12) | 5 (TD-07a, TD-10, TD-11, TD-21, TD-24) |
+| Low | 11 | 1 (TD-17) | 10 (TD-13, TD-14, TD-15, TD-16 partial, TD-19, TD-20, TD-22, TD-23, TD-25, TD-26) |
 | Sprint 3 additions | 3 | 3 | 0 |
-| **Total** | **35** | **20** | **15** |
+| **Total** | **35** | **21** | **14** |
 
-Note: TD-04 (most LLM agents still stubs) is now further resolved — orchestrator and denial_prevention are implemented (Phase 7, light scope), and the Coding Validation Agent is now implemented (v1.3, ADR-016). Only Documentation Review (deferred, not a blocker) remains open under TD-04. TD-06 (two hardcoded code validity rules) is now partially resolved — the ICD-10-CM reference dataset piece is delivered (v1.5, via a new separate module rather than rewriting `_load_dx_procedure_rules()`); modifier-rule expansion and HCPCS Level II validity remain open. TD-08 (`test_orchestrator.py` stub) is now fully resolved. TD-09 (golden set evaluation framework) is now resolved (v1.4); its first live run surfaced TD-24 (agent over-flagging lowers live precision), which remains open. v1.5 also opened TD-25 (LOW, informational — the two pre-existing hardcoded code_validity.py rules don't use the new ICD-10 dataset, by design/scope). TD-26 (LOW) was opened after observing weak model-selected `citation_excerpt` values during demo/manual review of live Coding/Coverage Agent output — not blocking v1.5.
+Note: TD-04 (most LLM agents still stubs) is now further resolved — orchestrator and denial_prevention are implemented (Phase 7, light scope), and the Coding Validation Agent is now implemented (v1.3, ADR-016). Only Documentation Review (deferred, not a blocker) remains open under TD-04. TD-06 (two hardcoded code validity rules) is now partially resolved — the ICD-10-CM reference dataset piece is delivered (v1.5, via a new separate module rather than rewriting `_load_dx_procedure_rules()`); modifier-rule expansion and HCPCS Level II validity remain open. TD-08 (`test_orchestrator.py` stub) is now fully resolved. TD-09 (golden set evaluation framework) is now resolved (v1.4); its first live run surfaced TD-24 (agent over-flagging lowers live precision), which remains open. v1.5 also opened TD-25 (LOW, informational — the two pre-existing hardcoded code_validity.py rules don't use the new ICD-10 dataset, by design/scope). TD-26 (LOW) was opened after observing weak model-selected `citation_excerpt` values during demo/manual review of live Coding/Coverage Agent output — not blocking v1.5. v1.6 (public release hardening) resolved TD-12 — the AI-disabled guard now lives in the orchestrator, not just the agent call sites — and partially resolved TD-16 — `agents/run_logger.py` adds structured per-check logging (rule layer, coverage, coding); `AuditRepository` writes are not yet covered, so TD-16 remains open at LOW priority.
 
 Items R1–R5 were addressed in the pre-audit model refactor and Sprint 2.
 Items R6–R8 were addressed in Sprint 3 (policy intelligence foundation).

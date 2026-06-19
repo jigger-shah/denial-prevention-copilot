@@ -156,7 +156,7 @@ Implement the complete human decision workflow (accept/override, override requir
 
 **Trust is established by the architecture, not the AI:** A compliance lead reviewing this system cares about whether the audit trail is complete and immutable. That property must hold for rule findings, agent findings, and all future findings equally. Establishing it before the first AI finding ensures no gap in the audit record.
 
-**Demo sequencing:** Being able to show the audit trail before the AI is wired means the governance story can be demonstrated independently of AI quality. Interviewers can evaluate the governance design on its own terms.
+**Demo sequencing:** Being able to show the audit trail before the AI is wired means the governance story can be demonstrated independently of AI quality. Reviewers can evaluate the governance design on its own terms.
 
 **Forces the right data contract:** Implementing `AuditDecision` and `AuditRepository.save_decision()` before agents forces the agent layer to produce `Finding` objects that are already audit-ready. Without this forcing function, agents might return richer or looser structures that require transformation before persistence.
 

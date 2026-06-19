@@ -1,0 +1,102 @@
+{
+  "_meta": {
+    "description": "Pre-generated AI agent findings for designated sample claims, captured from real validate_coverage()/validate_coding() runs against a live ANTHROPIC_API_KEY. Used only to let public users without an API key preview representative AI output inside the Sample Claim flow. Never used when ANTHROPIC_API_KEY is present — live agents always take priority.",
+    "generated_at": "2026-06-19",
+    "model": "claude-sonnet-4-6"
+  },
+  "CLM-001": {
+    "scenario_label": "Multi-finding scenario (rule + coverage + coding)",
+    "findings": [
+      {
+        "source": "agent_layer",
+        "rule": "coverage_validation",
+        "severity": "HIGH",
+        "issue": "Routine physical exam diagnosis (Z00.00) likely not covered for lab testing and E/M services under Medicare Part B",
+        "recommendation": "Verify if patient has specific signs, symptoms, or medical conditions that would support medical necessity for the office visit (99214) and lab tests (80053, 80048). If medical conditions exist (e.g., diabetes, hypertension, kidney disease), ensure appropriate ICD-10 codes are documented and submitted. Z00.00 (encounter for general adult medical examination without abnormal findings) is typically not a covered diagnosis for Medicare Part B services. Consider whether this should be billed as a preventive visit with appropriate preventive visit codes instead.",
+        "confidence": 0.95,
+        "citation": {
+          "source": "coverage_validation",
+          "doc_id": "33431",
+          "section": "Coverage Indications, Limitations, and/or Medical Necessity",
+          "edition": "",
+          "effective_date": "09/18/2025",
+          "excerpt": "Other tests to assess diabetes, including glucose, glycated protein, or fructosamine levels, may be used and are described in the Lab National Coverage Determination 190.21 (NCD for Glycated Hemoglobin / Glycated Protein). This NCD lists the ICD-10 codes for HbA1c for frequencies up to once every 3 months."
+        }
+      },
+      {
+        "source": "agent_layer",
+        "rule": "coding_validation",
+        "severity": "HIGH",
+        "issue": "Z00.00 (encounter for general adult medical examination without abnormal findings) is unlikely to support medical necessity for laboratory testing (CPT 80053, 80048) under Medicare policy",
+        "recommendation": "Review documentation to identify if any signs, symptoms, or medical conditions justify the laboratory testing. If the patient has diabetes, pre-diabetes, hypertension, dyslipidemia, or other specific diagnoses, code those conditions instead of the screening code. Medicare typically does not cover routine screening labs under Part B unless specific conditions are present or the service qualifies as a covered preventive benefit. Consider whether the visit should be coded as a preventive service (G0438/G0439) or if specific diagnosis codes should replace Z00.00.",
+        "confidence": 0.95,
+        "citation": {
+          "source": "coding_validation",
+          "doc_id": "33431",
+          "section": "Coverage Indications, Limitations, and/or Medical Necessity",
+          "edition": "",
+          "effective_date": "09/18/2025",
+          "excerpt": "Other tests to assess diabetes, including glucose, glycated protein, or fructosamine levels, may be used and are described in the Lab National Coverage Determination 190.21 (NCD for Glycated Hemoglobin / Glycated Protein). This NCD lists the ICD-10 codes for HbA1c for frequencies up to once every 3 months."
+        }
+      }
+    ]
+  },
+  "CLM-002": {
+    "scenario_label": "Coding finding scenario",
+    "findings": [
+      {
+        "source": "agent_layer",
+        "rule": "coding_validation",
+        "severity": "MEDIUM",
+        "issue": "CPT 85025 (Complete Blood Count with differential) billed with diagnosis J06.9 (Acute upper respiratory infection, unspecified) is not supported by the provided blood glucose testing policies. The policies retrieved address blood glucose and HbA1c testing, not CBC testing for upper respiratory infections.",
+        "recommendation": "Verify medical necessity documentation supports the CBC for this diagnosis. While a CBC may be medically appropriate for evaluating infection, the claim should ensure documentation clearly demonstrates the medical necessity for this test in the context of an upper respiratory infection. Consider whether additional diagnosis codes are needed or whether the test was truly indicated for this encounter.",
+        "confidence": 0.75,
+        "citation": {
+          "source": "coding_validation",
+          "doc_id": "98",
+          "section": "Indications and Limitations of Coverage",
+          "edition": "",
+          "effective_date": "01/01/2005",
+          "excerpt": "Note: Scroll down for links to the quarterly Covered Code Lists (including narrative)."
+        }
+      }
+    ]
+  },
+  "CLM-005": {
+    "scenario_label": "Coverage finding scenario",
+    "findings": [
+      {
+        "source": "agent_layer",
+        "rule": "coverage_validation",
+        "severity": "HIGH",
+        "issue": "CPT 99395 (periodic comprehensive preventive medicine evaluation) is not covered by Medicare Part B for routine preventive visits",
+        "recommendation": "Medicare does not cover routine preventive physical examinations (CPT 99395) for established patients. Consider whether this visit qualifies for Medicare's covered preventive services such as the Annual Wellness Visit (G0438/G0439) or Initial Preventive Physical Examination (G0402). If the visit was for diagnosis or treatment of a specific condition, use appropriate E/M codes (99211-99215) with the relevant diagnosis code instead of Z00.00 (encounter for general adult medical examination without abnormal findings).",
+        "confidence": 0.95,
+        "citation": {
+          "source": "coverage_validation",
+          "doc_id": "98",
+          "section": "Indications and Limitations of Coverage",
+          "edition": "",
+          "effective_date": "01/01/2005",
+          "excerpt": "Note: Scroll down for links to the quarterly Covered Code Lists (including narrative)."
+        }
+      },
+      {
+        "source": "agent_layer",
+        "rule": "coding_validation",
+        "severity": "HIGH",
+        "issue": "CPT 99395 (periodic comprehensive preventive medicine visit) billed to Medicare Part B with diagnosis Z00.00 (encounter for general adult medical examination without abnormal findings) - routine preventive services are not covered by Medicare Part B",
+        "recommendation": "Verify whether this service qualifies under Medicare's limited preventive coverage benefits (e.g., Welcome to Medicare visit, Annual Wellness Visit). If this is a routine physical exam, advise patient that Medicare does not cover routine preventive physical exams (CPT 99381-99397) and the patient should be provided an ABN (Advance Beneficiary Notice) prior to service. Consider whether the service should be recoded to an appropriate Medicare-covered preventive service (G0402, G0438, G0439) or an E/M visit with a covered diagnosis if medically necessary services were provided.",
+        "confidence": 0.95,
+        "citation": {
+          "source": "coding_validation",
+          "doc_id": "33431",
+          "section": "Coverage Indications, Limitations, and/or Medical Necessity",
+          "edition": "",
+          "effective_date": "09/18/2025",
+          "excerpt": "This NCD lists the ICD-10 codes for HbA1c for frequencies up to once every 3 months."
+        }
+      }
+    ]
+  }
+}

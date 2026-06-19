@@ -18,9 +18,23 @@ orchestrator-level behavior.
 
 from unittest.mock import patch
 
+import pytest
+
 from agents.orchestrator import run_review
 from rules.models import Citation, ClaimIn, Finding
 from rules.rule_engine import CHECKS_RUN
+
+
+@pytest.fixture(autouse=True)
+def _api_key_present(monkeypatch):
+    """
+    Every test in this file mocks validate_coverage/validate_coding directly and
+    expects run_review() to call them — so ANTHROPIC_API_KEY must read as present
+    regardless of whether a real .env exists on the machine running the suite
+    (e.g. a fresh public clone with no key). The "no key" disabled path has its
+    own explicit tests below (see "AI disabled when no API key").
+    """
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
 
 
 def _claim(npi="", cpt_codes=None, icd10_codes=None, claim_id="CLM-ORCH-001"):
@@ -321,3 +335,49 @@ def test_no_anthropic_client_constructed_when_agents_mocked():
         mock_validate_coding.return_value = []
         run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
         mock_anthropic.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# AI disabled when no API key (v1.6 — public release hardening, TD-12)
+# ---------------------------------------------------------------------------
+
+def test_agents_not_called_when_api_key_missing(monkeypatch):
+    """run_review() must not even attempt to call the agents when no key is set."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with patch("agents.orchestrator.validate_coverage") as mock_validate_coverage, \
+         patch("agents.orchestrator.validate_coding") as mock_validate_coding:
+        result = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
+
+        mock_validate_coverage.assert_not_called()
+        mock_validate_coding.assert_not_called()
+        assert result.score == "CLEAN"
+
+
+def test_no_anthropic_client_constructed_when_api_key_missing(monkeypatch):
+    """No key -> orchestrator never reaches the agents -> no client is ever constructed."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with patch("anthropic.Anthropic") as mock_anthropic:
+        run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
+        mock_anthropic.assert_not_called()
+
+
+def test_checks_run_excludes_ai_labels_when_api_key_missing(monkeypatch):
+    """Deterministic checks_run is still reported; coverage/coding labels are not, since they didn't run."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    result = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
+
+    for label in CHECKS_RUN:
+        assert label in result.checks_run
+    assert not any("coverage" in label.lower() for label in result.checks_run)
+    assert not any("coding" in label.lower() for label in result.checks_run)
+
+
+def test_deterministic_findings_still_returned_when_api_key_missing(monkeypatch):
+    """Rule-layer findings (e.g. NCCI bundling) are unaffected by AI being disabled."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    claim = _claim(cpt_codes=["99214", "80053", "80048"], icd10_codes=["Z00.00"])
+
+    result = run_review(claim)
+
+    assert any(f.source == "rule_layer" for f in result.findings)
+    assert not any(f.source == "agent_layer" for f in result.findings)

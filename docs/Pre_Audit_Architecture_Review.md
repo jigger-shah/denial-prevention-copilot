@@ -3,7 +3,6 @@
 
 **Reviewed after:** Sprint 1 (`cf322d9` — Build deterministic claim review v0.1)  
 **Reviewed before:** Sprint 2 (`ee45738` — Add audit logging, human decision workflow)  
-**Author:** Jigger Shah  
 **Purpose:** Permanent record of the architectural state before persistence was added, the gaps identified, the refactoring recommended and executed, and the rationale for every model change that preceded the audit log.
 
 ---

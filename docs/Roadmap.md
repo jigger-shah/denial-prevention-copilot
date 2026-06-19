@@ -471,7 +471,7 @@ Documentation Review Agent, an LLM-based Denial Prevention summary/narrative age
 **Tests:** 375 tests, all passing (+26)
 
 ### Objectives
-Build the golden-set evaluation infrastructure so that agent quality can be measured, regression-tested, and discussed with precision in interviews.
+Build the golden-set evaluation infrastructure so that agent quality can be measured and regression-tested with precision.
 
 ### Deliverables
 - `evaluation/golden_claims.json`: 14 synthetic claims (target 25, minimum 10 — expansion path is to append more claims to the same list; harness and tests need no changes) covering invalid NPI, NCCI conflict, MUE limit, missing modifier 25, diagnosis-to-procedure mismatch, Medicare coverage concern, coding defensibility concern, multi-finding, and clean scenarios, each with `claim_id` + `expected_findings` labels
@@ -533,27 +533,55 @@ Documentation Review Agent, deployment, Streamlit Cloud, public repo prep, LLM D
 
 ---
 
+## Phase 8.6 — Public Release Hardening (v1.6) ✅ Complete
+
+**Tests:** 426 tests, all passing (+22)
+
+### Objectives
+Harden the repository for eventual public release without deploying, going public, or adding product features. Close the gap between "works on the developer's machine with a real `.env`" and "works correctly on a fresh public clone with no API key at all."
+
+### Deliverables
+- Repository-wide hygiene pass: removed interview/hiring-manager/recruiter/UiPath framing from `docs/Demo_Script.md`, `docs/Demo_Script_Production_Validated.md`, `docs/Repository_Status_Report.md`, `docs/Roadmap.md`, `docs/Architecture_Decisions.md`; removed a personal-name authorship byline from `docs/Pre_Audit_Architecture_Review.md`. (Legitimate UX-research "user interviews" language and the LICENSE copyright line, which uses a GitHub handle, were left untouched — neither is a privacy or positioning issue.)
+- `agents/orchestrator.py`: new `_ai_enabled()` gate checked before either agent is called — not just relying on each agent's own internal `if not api_key: return []` guard. Closes TD-12. `checks_run` now accurately omits the AI labels when no key is present.
+- `app/main.py`: sidebar and in-page AI sections now show an explicit "⚠ AI Agents Disabled" warning (naming `ANTHROPIC_API_KEY`) instead of silently doing nothing.
+- `data/synthetic/cached_ai_demo_artifacts.json` + `app/main.py:_render_cached_ai_demo()`: three sample claims (`CLM-001` multi-finding, `CLM-002` coding-only, `CLM-005` coverage-only) show pre-generated AI findings — captured from a real agent run — under a "📋 Pre-generated demonstration results" banner when AI is disabled. Read-only; never shown once a real key is present.
+- `agents/run_logger.py`: structured local JSON-lines logging (`logs/agent_runs.jsonl`, gitignored) for each orchestrator-dispatched check — rule layer, coverage agent, coding agent — with timestamp, claim_id, agent, finding_count, success, latency_ms. Partially closes TD-16 (`AuditRepository` writes remain unlogged).
+- `README.md` rewritten: portfolio/demo framing, "not for clinical or billing use" / "not HIPAA certified" disclosure, an explicit AI-features-are-optional section, and an Architecture Overview (Rule Layer / AI Layer / Orchestration / Evaluation).
+- `docs/Demo_Script.md`: new "No-API-Key Demo Path" section covering the deterministic-only, invalid-NPI, NCCI/MUE/modifier, and ICD-10-unspecified scenarios, plus the cached-artifact claims, so a public user can exercise the whole app without a key.
+- `docs/Technical_Debt_Register.md`: TD-12 closed, TD-16 marked partially resolved.
+- New tests: `tests/test_app_ai_disabled.py` (5), `tests/test_cached_ai_demo.py` (9), `tests/test_run_logger.py` (4), plus 4 new `tests/test_orchestrator.py` cases for the no-key path.
+
+### Out of scope (deferred, not part of this phase)
+Streamlit Cloud deployment, switching the GitHub repository to public, LinkedIn/social content, Documentation Review Agent, LLM Denial Prevention Summary Agent, root-cause grouping, finding deduplication, new AI agents, major UI redesign.
+
+### Success Criteria
+- Fresh clone with no `ANTHROPIC_API_KEY` launches with no exception ✅
+- Deterministic rule-engine review works fully without a key ✅
+- Coverage and Coding agents are disabled, no Anthropic client is ever constructed ✅
+- Cached AI demo scenarios are viewable without a key, clearly labeled as pre-generated ✅
+- Full suite passes (426/426) ✅
+- No personal names, recruiter/interview/LinkedIn/UiPath framing, secrets, or real PHI found in any tracked file (one residual flagged: the original PRD PDF cites two public UiPath press-release URLs as market-research sources — not edited, as it's the unmodified original product spec, not authored prose)
+
+---
+
 ## Phase 9 — Portfolio Publication
 
 **Status:** Future  
 **Estimated scope:** 1 session
 
 ### Objectives
-Polish the repository for public visibility and portfolio use.
+Make the repository publicly visible. Phase 8.6 (v1.6) already delivered the README rewrite, screenshots, and hygiene pass that this phase originally scoped — what remains is the act of going public.
 
 ### Deliverables
-- `README.md` rewritten with: project overview, architecture diagram, setup instructions, screenshots, and the PRD summary
-- 3–5 screenshots of the running app (claim review, findings, audit trail) committed to `docs/screenshots/`
-- `CONTRIBUTING.md` or note in README explaining the synthetic-data-only constraint
 - GitHub repository set to public
 - GitHub Actions CI (optional): `pytest tests/` on push to main
 
 ### Dependencies
-- Phase 2+ complete (enough to screenshot)
+- Phase 8.6 complete (hygiene, secret-safety, and README work done)
 - No PHI in any committed file (verified)
 
 ### Success Criteria
-- A recruiter or interviewer can clone the repository, follow the README, and run the app with `streamlit run app/main.py` in under 5 minutes
+- A new user can clone the repository, follow the README, and run the app with `streamlit run app/main.py` in under 5 minutes
 - Screenshots clearly show the findings panel, citation display, audit trail, and export
 
 ---
@@ -606,5 +634,6 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 | 7.5 — Coding Validation Agent (v1.3) | ✅ Complete | Second LLM agent: coding defensibility, diagnosis specificity, payer scrutiny risk; 349 tests | P0 |
 | 8 — Evaluation Framework (v1.4) | ✅ Complete | Golden set, precision/recall harness; Rule Engine 1.00/1.00/1.00 offline; 375 tests | P0 metric |
 | 8.5 — ICD-10 Expansion (v1.5) | ✅ Complete | Real CMS ICD-10-CM dataset; icd10_invalid/icd10_unspecified rules; 404 tests | P0 |
-| 9 — Portfolio Publication | 🔜 | Public README, screenshots | Portfolio |
+| 8.6 — Public Release Hardening (v1.6) | ✅ Complete | No-key safe mode, cached AI demo artifacts, repo hygiene, structured logging; 426 tests | Portfolio |
+| 9 — Portfolio Publication | 🔜 | Repo set to public, optional CI | Portfolio |
 | 10 — Streamlit Cloud | 🔜 | Live public URL | Portfolio |
