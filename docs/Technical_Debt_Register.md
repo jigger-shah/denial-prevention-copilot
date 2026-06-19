@@ -432,15 +432,31 @@ All three `fetch_*()` functions were re-run live end-to-end through `chunk_docum
 
 ---
 
+#### TD-23: Finding Consolidation / Root Cause Grouping
+
+**Severity:** LOW / MEDIUM
+
+**Observation:** Observed in v1.3 — the Coverage Agent and Coding Agent may independently identify the same underlying denial risk from different perspectives (coverage vs. coding defensibility).
+
+**Current behavior:** Findings from each agent are displayed independently, even when they trace back to the same root cause.
+
+**Impact:** Does not block MVP correctness — each finding is still individually citation-grounded and accurate. However, a reviewer may see two findings that look like separate issues when they are really one denial risk viewed from two angles, adding noise to the review.
+
+**Recommended Fix:** Group related findings under a shared denial-risk cluster while preserving agent-level evidence (citation, severity, confidence per agent), as part of the Denial Prevention Agent's synthesis step.
+
+**Status:** Deferred. Not required for v1.3 public portfolio readiness.
+
+---
+
 ## Debt Summary
 
 | Priority | Count | Resolved | Open |
 |---|---|---|---|
 | High | 11 | 11 (R1–R5, TD-01, TD-02, TD-03, TD-05, TD-08, TD-18) | 1 (TD-04 partial, TD-06 — see note) |
 | Medium | 8 | 3 (TD-07, TD-07b, TD-08) | 5 (TD-07a, TD-09, TD-10, TD-11, TD-12, TD-21) |
-| Low | 8 | 1 (TD-17) | 7 (TD-13, TD-14, TD-15, TD-16, TD-19, TD-20, TD-22) |
+| Low | 9 | 1 (TD-17) | 8 (TD-13, TD-14, TD-15, TD-16, TD-19, TD-20, TD-22, TD-23) |
 | Sprint 3 additions | 3 | 3 | 0 |
-| **Total** | **30** | **19** | **11** |
+| **Total** | **31** | **19** | **12** |
 
 Note: TD-04 (most LLM agents still stubs) is now further resolved — orchestrator and denial_prevention are implemented (Phase 7, light scope), and the Coding Validation Agent is now implemented (v1.3, ADR-016). Only Documentation Review (deferred, not a blocker) remains open under TD-04. TD-06 (two hardcoded code validity rules) remains fully open — neither was touched this phase. TD-08 (`test_orchestrator.py` stub) is now fully resolved.
 
