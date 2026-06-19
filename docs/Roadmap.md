@@ -466,32 +466,37 @@ Documentation Review Agent, an LLM-based Denial Prevention summary/narrative age
 
 ---
 
-## Phase 8 — Evaluation Framework
+## Phase 8 — Evaluation Framework (v1.4) ✅ Complete
 
-**Status:** Future  
-**Estimated scope:** 1–2 implementation sessions
+**Tests:** 375 tests, all passing (+26)
 
 ### Objectives
 Build the golden-set evaluation infrastructure so that agent quality can be measured, regression-tested, and discussed with precision in interviews.
 
 ### Deliverables
-- `data/synthetic/golden_claims.json`: 20–30 synthetic claims with seeded denial risks and expected findings (ground truth)
-- `pytest.ini` or `pyproject.toml` updated with `golden` marker definition
-- `tests/test_golden.py`: implements `pytest -m golden` evaluation
-  - Loads golden claims
-  - Runs full orchestrator review
-  - Asserts precision ≥ 90% and recall ≥ 85% against expected findings
-  - Tracks citation coverage (target: 100%)
-- `scripts/evaluate.py`: standalone script that prints a precision/recall table per agent and per finding type
+- `evaluation/golden_claims.json`: 14 synthetic claims (target 25, minimum 10 — expansion path is to append more claims to the same list; harness and tests need no changes) covering invalid NPI, NCCI conflict, MUE limit, missing modifier 25, diagnosis-to-procedure mismatch, Medicare coverage concern, coding defensibility concern, multi-finding, and clean scenarios, each with `claim_id` + `expected_findings` labels
+- `evaluation/metrics.py`: maps `Finding.rule` → normalized label (the single place that vocabulary is defined); micro-averaged precision/recall/F1
+- `evaluation/harness.py`: `run_evaluation()` calls `agents.orchestrator.run_review()` per claim. Offline by default — `agents.orchestrator.validate_coverage`/`validate_coding` are mocked to return `[]`, so no Anthropic call happens and the rule layer runs for real. `live=True` makes real agent calls (default model `claude-haiku-4-5`, the agents' own existing default) for a true read on agent-layer accuracy.
+- `evaluation/run_evaluation.py`: CLI (`python -m evaluation.run_evaluation [--live]`), saves `latest_report.md` (metrics table + claim-level results), `latest_results.json`, `latest_summary.json` into `evaluation/`
+- `tests/test_evaluation.py`: 26 new tests — label normalization, precision/recall/F1 (perfect match, false positive, false negative, empty/empty, both-empty-asymmetric, harmonic mean), evaluation runner behavior, no-API-call guarantee in offline mode
+- No existing module's logic was modified — `agents/orchestrator.py` and `agents/denial_prevention.py` are called exactly as they are
+
+### Deviation from original plan
+Built as a standalone `evaluation/` module + CLI rather than a `pytest -m golden` marker — precision/recall against a golden set is a measurement to run and report on demand (and the only mode that's offline-safe is the rule-layer-only one), not a pass/fail gate suited to every `pytest tests/` run. See `docs/Technical_Debt_Register.md` TD-09 (resolved).
 
 ### Dependencies
-- Phase 7 complete (all agents wired)
+- Phase 7.5 complete (Coding Validation Agent wired in)
+
+### Results
+- Offline (default, no API calls): Rule Engine 1.00 precision / 1.00 recall / 1.00 F1. Coverage/Coding Agent categories show 0.00 by design (mocked off) — not a quality measurement.
+- Live (real `claude-haiku-4-5` calls): Rule Engine still 1.00/1.00/1.00; Coverage Agent 0.30 precision / 1.00 recall; Coding Agent 0.25 precision / 1.00 recall — both agents catch every labeled positive but also flag several claims not labeled as agent-positive. Tracked as `docs/Technical_Debt_Register.md` TD-24 (open) — address before publishing live AI accuracy claims.
 
 ### Success Criteria
-- `pytest tests/ -m golden` runs without error and prints a precision/recall report
-- Precision ≥ 90% on golden set
-- Recall ≥ 85% on golden set
-- Citation coverage = 100% (every finding in the golden set has a citation)
+- Full suite passes (375/375) ✅
+- Precision/recall/F1 computed overall and per category (Rule Engine, Coverage Agent, Coding Agent) ✅
+- Saved evaluation report (markdown + JSON) ✅
+- No real Anthropic calls in the automated test suite ✅
+- 90%/85% precision/recall targets: met for Rule Engine offline; not yet met for the agent layer live (TD-24, open)
 
 ---
 
@@ -566,6 +571,6 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 | 6 — Documentation Agent | ⏸️ Deferred / Under Evaluation | Clinical note analysis — not an MVP blocker | P1 |
 | 7 — Light Orchestrator + Synthesis | ✅ Complete (light scope) | Unified Review: rule layer + Coverage Agent → RiskAssessment, 308 tests | P0 |
 | 7.5 — Coding Validation Agent (v1.3) | ✅ Complete | Second LLM agent: coding defensibility, diagnosis specificity, payer scrutiny risk; 349 tests | P0 |
-| 8 — Evaluation | 🔜 | Golden set, precision/recall | P0 metric |
+| 8 — Evaluation Framework (v1.4) | ✅ Complete | Golden set, precision/recall harness; Rule Engine 1.00/1.00/1.00 offline; 375 tests | P0 metric |
 | 9 — Portfolio Publication | 🔜 | Public README, screenshots | Portfolio |
 | 10 — Streamlit Cloud | 🔜 | Live public URL | Portfolio |
