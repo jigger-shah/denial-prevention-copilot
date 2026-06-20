@@ -584,7 +584,7 @@ Replace the `find_policies_by_codes(...)` call and `_LCD_SOURCE_TYPES` filter in
 
 - The coverage agent v1 can only produce findings for claims with ICD-10 codes in the JSON policy corpus (currently: Z00.00, I10, Z00.01, 99395 via applies_to_codes). All other claims correctly produce no AI finding.
 - `tests/test_coverage_validation.py` tests all governance paths without real API calls. Mock is applied at `agents.coverage_validation.anthropic.Anthropic` — the same boundary used for all future agent tests.
-- `ANTHROPIC_MODEL` env var overrides the default model (`claude-haiku-4-5`); `claude-sonnet-4-5` or `claude-sonnet-4-6` can be selected for higher reasoning quality.
+- `ANTHROPIC_MODEL` env var overrides the default model (`claude-haiku-4-5` at the time of this ADR; default changed to `claude-sonnet-4-6` in v1.7 — see `docs/Technical_Debt_Register.md` TD-24); `claude-haiku-4-5` or `claude-opus-4-8` can still be selected via the same env var.
 
 ---
 
