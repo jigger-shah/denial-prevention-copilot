@@ -102,19 +102,19 @@ def _mock_response(*blocks):
 
 def test_missing_api_key_returns_empty_no_exception(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    result = validate_coding(_claim(icd10_codes=["Z00.00"]))
+    result, _ = validate_coding(_claim(icd10_codes=["Z00.00"]))
     assert result == []
 
 
 def test_empty_api_key_returns_empty(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
-    result = validate_coding(_claim(icd10_codes=["Z00.00"]))
+    result, _ = validate_coding(_claim(icd10_codes=["Z00.00"]))
     assert result == []
 
 
 def test_claim_with_no_lcd_policy_returns_empty(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    result = validate_coding(_claim(cpt_codes=["ZZZZ99"], icd10_codes=["Q00.0"]))
+    result, _ = validate_coding(_claim(cpt_codes=["ZZZZ99"], icd10_codes=["Q00.0"]))
     assert result == []
 
 
@@ -137,7 +137,7 @@ def test_valid_report_finding_produces_one_finding(mock_anthropic, monkeypatch):
     })
     mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
 
-    findings = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+    findings, _ = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
 
     assert len(findings) == 1
     f = findings[0]
@@ -146,6 +146,40 @@ def test_valid_report_finding_produces_one_finding(mock_anthropic, monkeypatch):
     assert f.source == "agent_layer"
     assert f.citation.doc_id == "LCD_E_M_MEDICAL_NECESSITY_Z00"
     assert f.confidence == pytest.approx(0.85)
+
+
+@patch("agents.coding_validation.anthropic.Anthropic")
+def test_returns_retrieved_policies_alongside_findings(mock_anthropic, monkeypatch):
+    """TD-22: the second return value exposes every policy retrieved for this
+    claim (not just the one the model cited), so the UI can show 'Supporting
+    Policies Reviewed' without a second retrieval call."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    tool_block = _tool_use_block("report_coding_finding", {
+        "issue": "Diagnosis lacks specificity to support billed E/M level",
+        "recommendation": "Use a more specific ICD-10 code reflecting the documented condition.",
+        "severity": "MEDIUM",
+        "confidence": 0.85,
+        "citation_doc_id": "LCD_E_M_MEDICAL_NECESSITY_Z00",
+        "citation_section": "Indications and Limitations of Coverage and/or Medical Necessity",
+        "citation_excerpt": "Problem-oriented E/M services billed with Z00.00 require modifier 25.",
+    })
+    mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
+
+    findings, retrieved_policies = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+
+    assert len(findings) == 1
+    assert retrieved_policies, "Expected at least the cited policy to be in retrieved_policies"
+    cited_doc_id = findings[0].citation.doc_id
+    assert any(p["document_id"] == cited_doc_id for p in retrieved_policies)
+
+
+def test_no_api_key_returns_empty_policies_too(monkeypatch):
+    """Both elements of the tuple are empty together — no partial state."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    findings, retrieved_policies = validate_coding(_claim(icd10_codes=["Z00.00"]))
+    assert findings == []
+    assert retrieved_policies == []
 
 
 @patch("agents.coding_validation.anthropic.Anthropic")
@@ -163,9 +197,9 @@ def test_finding_has_stable_finding_id(mock_anthropic, monkeypatch):
     })
     mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
 
-    findings1 = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"], claim_id="CLM-STABLE"))
+    findings1, _ = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"], claim_id="CLM-STABLE"))
     mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
-    findings2 = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"], claim_id="CLM-STABLE"))
+    findings2, _ = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"], claim_id="CLM-STABLE"))
 
     assert findings1[0].finding_id == findings2[0].finding_id
     assert findings1[0].finding_id.startswith("cod-")
@@ -180,7 +214,7 @@ def test_no_coding_concern_tool_returns_empty(mock_anthropic, monkeypatch):
     })
     mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
 
-    findings = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
+    findings, _ = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
     assert findings == []
 
 
@@ -200,7 +234,7 @@ def test_ungrounded_doc_id_suppresses_finding(mock_anthropic, monkeypatch):
     mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
 
     # Z00.00 will retrieve LCD_E_M_MEDICAL_NECESSITY_Z00, but the model cites a different doc
-    findings = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+    findings, _ = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
     assert findings == []
 
 
@@ -209,7 +243,7 @@ def test_api_exception_returns_empty_no_propagation(mock_anthropic, monkeypatch)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     mock_anthropic.return_value.messages.create.side_effect = RuntimeError("network failure")
 
-    findings = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+    findings, _ = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
     assert findings == []
 
 
@@ -220,7 +254,7 @@ def test_no_tool_use_block_returns_empty(mock_anthropic, monkeypatch):
         _text_block("I think there might be an issue but I'm not calling a tool.")
     )
 
-    findings = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+    findings, _ = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
     assert findings == []
 
 
@@ -239,7 +273,7 @@ def test_finding_source_is_coding_validation(mock_anthropic, monkeypatch):
     })
     mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
 
-    findings = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+    findings, _ = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
     assert findings[0].citation.source == "coding_validation"
 
 
@@ -261,7 +295,7 @@ def test_finding_citation_doc_id_resolves_in_policy_corpus(mock_anthropic, monke
     })
     mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
 
-    findings = validate_coding(_claim(cpt_codes=["99395"], icd10_codes=["Z00.00"]))
+    findings, _ = validate_coding(_claim(cpt_codes=["99395"], icd10_codes=["Z00.00"]))
     assert len(findings) == 1
     doc = find_policy_by_document_id(findings[0].citation.doc_id)
     assert doc is not None
@@ -325,7 +359,7 @@ def test_vector_store_queried_when_it_has_results(mock_anthropic, mock_vector_st
     })
     mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
 
-    findings = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+    findings, _ = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
 
     mock_vector_store.query.assert_called_once()
     assert len(findings) == 1
@@ -372,7 +406,7 @@ def test_citation_grounding_works_with_vector_result_document_id(mock_anthropic,
     })
     mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
 
-    findings = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+    findings, _ = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
     assert findings == []  # suppressed: ungrounded doc_id, even though the source was the vector store
 
 
@@ -428,7 +462,7 @@ def test_validate_coding_returns_empty_when_neither_source_has_policies(monkeypa
     mock_vector_store.count.return_value = 5
     mock_vector_store.query.return_value = []
 
-    findings = validate_coding(_claim(cpt_codes=["ZZZZ99"], icd10_codes=["Q00.0"]))
+    findings, _ = validate_coding(_claim(cpt_codes=["ZZZZ99"], icd10_codes=["Q00.0"]))
     assert findings == []
 
 
@@ -458,7 +492,7 @@ def test_existing_mocked_anthropic_flow_unaffected_by_vector_swap(mock_anthropic
     })
     mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
 
-    findings = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+    findings, _ = validate_coding(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
 
     assert len(findings) == 1
     assert findings[0].citation.doc_id == "LCD_E_M_MEDICAL_NECESSITY_Z00"
@@ -554,7 +588,7 @@ def test_vector_citation_excerpt_does_not_begin_with_dangling_paren(mock_anthrop
     })
     mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
 
-    findings = validate_coding(_claim(cpt_codes=["83036"], icd10_codes=["Z00.00"]))
+    findings, _ = validate_coding(_claim(cpt_codes=["83036"], icd10_codes=["Z00.00"]))
 
     assert len(findings) == 1
     excerpt = findings[0].citation.excerpt
@@ -584,7 +618,7 @@ def test_vector_citation_grounding_still_passes_with_clean_excerpt(mock_anthropi
     })
     mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
 
-    findings = validate_coding(_claim(cpt_codes=["83036"], icd10_codes=["Z00.00"]))
+    findings, _ = validate_coding(_claim(cpt_codes=["83036"], icd10_codes=["Z00.00"]))
 
     assert len(findings) == 1
     assert findings[0].citation.doc_id == "33431"
@@ -661,7 +695,7 @@ def test_validate_coding_without_rule_findings_still_works(mock_anthropic, monke
     tool_block = _tool_use_block("no_coding_concern", {"reason": "fine"})
     mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
 
-    result = validate_coding(_claim(cpt_codes=["83036"], icd10_codes=["Z00.00"]))
+    result, _ = validate_coding(_claim(cpt_codes=["83036"], icd10_codes=["Z00.00"]))
 
     assert result == []
     _, kwargs = mock_anthropic.return_value.messages.create.call_args

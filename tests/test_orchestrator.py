@@ -81,10 +81,10 @@ def _coding_finding(confidence=0.85):
 @patch("agents.orchestrator.validate_coding")
 @patch("agents.orchestrator.validate_coverage")
 def test_clean_claim_returns_clean_score_no_findings(mock_validate_coverage, mock_validate_coding):
-    mock_validate_coverage.return_value = []
-    mock_validate_coding.return_value = []
+    mock_validate_coverage.return_value = ([], [])
+    mock_validate_coding.return_value = ([], [])
 
-    result = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
+    result, _ = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
 
     assert result.score == "CLEAN"
     assert result.findings == []
@@ -100,11 +100,11 @@ def test_clean_claim_returns_clean_score_no_findings(mock_validate_coverage, moc
 @patch("agents.orchestrator.validate_coding")
 @patch("agents.orchestrator.validate_coverage")
 def test_rule_and_coverage_findings_combined_into_one_risk_assessment(mock_validate_coverage, mock_validate_coding):
-    mock_validate_coverage.return_value = [_coverage_finding()]
-    mock_validate_coding.return_value = []
+    mock_validate_coverage.return_value = ([_coverage_finding()], [])
+    mock_validate_coding.return_value = ([], [])
 
     # 80053 + 80048 trigger an NCCI bundling finding; Z00.00 + 99214 trigger dx conflict + modifier 25
-    result = run_review(_claim(cpt_codes=["99214", "80053", "80048"], icd10_codes=["Z00.00"]))
+    result, _ = run_review(_claim(cpt_codes=["99214", "80053", "80048"], icd10_codes=["Z00.00"]))
 
     sources = {f.source for f in result.findings}
     assert "rule_layer" in sources
@@ -112,6 +112,41 @@ def test_rule_and_coverage_findings_combined_into_one_risk_assessment(mock_valid
     assert any(f.rule == "coverage_validation" for f in result.findings)
     assert result.score in {"HIGH", "MEDIUM"}
     mock_validate_coverage.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# TD-22: retrieved_policies sibling return
+# ---------------------------------------------------------------------------
+
+@patch("agents.orchestrator.validate_coding")
+@patch("agents.orchestrator.validate_coverage")
+def test_run_review_returns_retrieved_policies_dict(mock_validate_coverage, mock_validate_coding):
+    """run_review() returns (assessment, retrieved_policies) where retrieved_policies
+    maps each agent's rule name to the policies it retrieved — RiskAssessment's
+    own shape is unchanged."""
+    coverage_policies = [{"document_id": "LCD_1", "title": "Test LCD", "section": "Indications"}]
+    coding_policies = [{"document_id": "LCD_2", "title": "Test LCD 2", "section": "Indications"}]
+    mock_validate_coverage.return_value = ([_coverage_finding()], coverage_policies)
+    mock_validate_coding.return_value = ([_coding_finding()], coding_policies)
+
+    result, retrieved_policies = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
+
+    assert isinstance(retrieved_policies, dict)
+    assert retrieved_policies["coverage_validation"] == coverage_policies
+    assert retrieved_policies["coding_validation"] == coding_policies
+    assert result.score  # unaffected, normal RiskAssessment
+
+
+@patch("agents.orchestrator.validate_coding")
+@patch("agents.orchestrator.validate_coverage")
+def test_retrieved_policies_empty_when_agents_not_called(mock_validate_coverage, mock_validate_coding):
+    """NPI short-circuit skips both agents — retrieved_policies must be empty, not missing keys."""
+    claim = _claim(npi="1234567890", cpt_codes=["80053"], icd10_codes=["Z00.00"])
+
+    _, retrieved_policies = run_review(claim)
+
+    assert retrieved_policies == {"coverage_validation": [], "coding_validation": []}
+    mock_validate_coverage.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +162,7 @@ def test_npi_high_short_circuit_skips_coverage_agent(mock_validate_coverage, moc
         icd10_codes=["Z00.00"],
     )
 
-    result = run_review(claim)
+    result, _ = run_review(claim)
 
     mock_validate_coverage.assert_not_called()
     assert all(f.rule == "npi_invalid" for f in result.findings)
@@ -158,10 +193,10 @@ def test_npi_high_short_circuit_skips_coding_agent(mock_validate_coverage, mock_
 def test_checks_run_includes_all_rule_checks_and_coverage_when_not_short_circuited(
     mock_validate_coverage, mock_validate_coding
 ):
-    mock_validate_coverage.return_value = []
-    mock_validate_coding.return_value = []
+    mock_validate_coverage.return_value = ([], [])
+    mock_validate_coding.return_value = ([], [])
 
-    result = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
+    result, _ = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
 
     for label in CHECKS_RUN:
         assert label in result.checks_run
@@ -171,10 +206,10 @@ def test_checks_run_includes_all_rule_checks_and_coverage_when_not_short_circuit
 @patch("agents.orchestrator.validate_coding")
 @patch("agents.orchestrator.validate_coverage")
 def test_checks_run_includes_coding_label_when_not_short_circuited(mock_validate_coverage, mock_validate_coding):
-    mock_validate_coverage.return_value = []
-    mock_validate_coding.return_value = []
+    mock_validate_coverage.return_value = ([], [])
+    mock_validate_coding.return_value = ([], [])
 
-    result = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
+    result, _ = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
 
     assert any("coding" in label.lower() for label in result.checks_run)
 
@@ -184,7 +219,7 @@ def test_checks_run_includes_coding_label_when_not_short_circuited(mock_validate
 def test_checks_run_is_npi_only_when_short_circuited(mock_validate_coverage, mock_validate_coding):
     claim = _claim(npi="1234567890", cpt_codes=["80053"], icd10_codes=["Z00.00"])
 
-    result = run_review(claim)
+    result, _ = run_review(claim)
 
     assert result.checks_run == [CHECKS_RUN[0]]
     assert not any("coverage" in label.lower() for label in result.checks_run)
@@ -198,10 +233,10 @@ def test_checks_run_is_npi_only_when_short_circuited(mock_validate_coverage, moc
 @patch("agents.orchestrator.validate_coding")
 @patch("agents.orchestrator.validate_coverage")
 def test_escalation_required_when_coverage_finding_has_low_confidence(mock_validate_coverage, mock_validate_coding):
-    mock_validate_coverage.return_value = [_coverage_finding(confidence=0.5)]
-    mock_validate_coding.return_value = []
+    mock_validate_coverage.return_value = ([_coverage_finding(confidence=0.5)], [])
+    mock_validate_coding.return_value = ([], [])
 
-    result = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
+    result, _ = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
 
     assert result.escalation_required is True
 
@@ -209,10 +244,10 @@ def test_escalation_required_when_coverage_finding_has_low_confidence(mock_valid
 @patch("agents.orchestrator.validate_coding")
 @patch("agents.orchestrator.validate_coverage")
 def test_escalation_not_required_when_all_findings_high_confidence(mock_validate_coverage, mock_validate_coding):
-    mock_validate_coverage.return_value = [_coverage_finding(confidence=0.9)]
-    mock_validate_coding.return_value = []
+    mock_validate_coverage.return_value = ([_coverage_finding(confidence=0.9)], [])
+    mock_validate_coding.return_value = ([], [])
 
-    result = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
+    result, _ = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
 
     assert result.escalation_required is False
 
@@ -224,10 +259,10 @@ def test_escalation_not_required_when_all_findings_high_confidence(mock_validate
 @patch("agents.orchestrator.validate_coding")
 @patch("agents.orchestrator.validate_coverage")
 def test_no_documentation_review_placeholder_finding_ever_appears(mock_validate_coverage, mock_validate_coding):
-    mock_validate_coverage.return_value = [_coverage_finding()]
-    mock_validate_coding.return_value = []
+    mock_validate_coverage.return_value = ([_coverage_finding()], [])
+    mock_validate_coding.return_value = ([], [])
 
-    result = run_review(_claim(cpt_codes=["99214", "80053", "80048"], icd10_codes=["Z00.00"]))
+    result, _ = run_review(_claim(cpt_codes=["99214", "80053", "80048"], icd10_codes=["Z00.00"]))
 
     assert not any(f.rule == "documentation_review" for f in result.findings)
     assert not any("documentation review" in f.issue.lower() for f in result.findings)
@@ -238,10 +273,10 @@ def test_no_documentation_review_placeholder_finding_ever_appears(mock_validate_
 @patch("agents.orchestrator.validate_coding")
 @patch("agents.orchestrator.validate_coverage")
 def test_no_documentation_review_label_in_checks_run(mock_validate_coverage, mock_validate_coding):
-    mock_validate_coverage.return_value = []
-    mock_validate_coding.return_value = []
+    mock_validate_coverage.return_value = ([], [])
+    mock_validate_coding.return_value = ([], [])
 
-    result = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
+    result, _ = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
 
     assert not any("documentation" in label.lower() for label in result.checks_run)
 
@@ -253,10 +288,10 @@ def test_no_documentation_review_label_in_checks_run(mock_validate_coverage, moc
 @patch("agents.orchestrator.validate_coding")
 @patch("agents.orchestrator.validate_coverage")
 def test_coding_findings_appear_in_risk_assessment(mock_validate_coverage, mock_validate_coding):
-    mock_validate_coverage.return_value = []
-    mock_validate_coding.return_value = [_coding_finding()]
+    mock_validate_coverage.return_value = ([], [])
+    mock_validate_coding.return_value = ([_coding_finding()], [])
 
-    result = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
+    result, _ = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
 
     assert any(f.rule == "coding_validation" for f in result.findings)
     mock_validate_coding.assert_called_once()
@@ -265,10 +300,10 @@ def test_coding_findings_appear_in_risk_assessment(mock_validate_coverage, mock_
 @patch("agents.orchestrator.validate_coding")
 @patch("agents.orchestrator.validate_coverage")
 def test_coding_findings_combined_with_coverage_and_rule_findings(mock_validate_coverage, mock_validate_coding):
-    mock_validate_coverage.return_value = [_coverage_finding()]
-    mock_validate_coding.return_value = [_coding_finding()]
+    mock_validate_coverage.return_value = ([_coverage_finding()], [])
+    mock_validate_coding.return_value = ([_coding_finding()], [])
 
-    result = run_review(_claim(cpt_codes=["99214", "80053", "80048"], icd10_codes=["Z00.00"]))
+    result, _ = run_review(_claim(cpt_codes=["99214", "80053", "80048"], icd10_codes=["Z00.00"]))
 
     rules_seen = {f.rule for f in result.findings}
     assert "coverage_validation" in rules_seen
@@ -279,8 +314,8 @@ def test_coding_findings_combined_with_coverage_and_rule_findings(mock_validate_
 @patch("agents.orchestrator.validate_coding")
 @patch("agents.orchestrator.validate_coverage")
 def test_coding_finding_drives_overall_risk_score(mock_validate_coverage, mock_validate_coding):
-    mock_validate_coverage.return_value = []
-    mock_validate_coding.return_value = [_coding_finding(confidence=0.9)]
+    mock_validate_coverage.return_value = ([], [])
+    mock_validate_coding.return_value = ([_coding_finding(confidence=0.9)], [])
     # bump severity to HIGH for this test via a fresh finding
     high_coding_finding = Finding(
         rule="coding_validation",
@@ -291,9 +326,9 @@ def test_coding_finding_drives_overall_risk_score(mock_validate_coverage, mock_v
         confidence=0.9,
         source="agent_layer",
     )
-    mock_validate_coding.return_value = [high_coding_finding]
+    mock_validate_coding.return_value = ([high_coding_finding], [])
 
-    result = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
+    result, _ = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
 
     assert result.score == "HIGH"
 
@@ -301,10 +336,10 @@ def test_coding_finding_drives_overall_risk_score(mock_validate_coverage, mock_v
 @patch("agents.orchestrator.validate_coding")
 @patch("agents.orchestrator.validate_coverage")
 def test_escalation_required_when_coding_finding_has_low_confidence(mock_validate_coverage, mock_validate_coding):
-    mock_validate_coverage.return_value = []
-    mock_validate_coding.return_value = [_coding_finding(confidence=0.5)]
+    mock_validate_coverage.return_value = ([], [])
+    mock_validate_coding.return_value = ([_coding_finding(confidence=0.5)], [])
 
-    result = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
+    result, _ = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
 
     assert result.escalation_required is True
 
@@ -314,8 +349,8 @@ def test_escalation_required_when_coding_finding_has_low_confidence(mock_validat
 def test_coverage_agent_called_before_coding_agent_sequentially(mock_validate_coverage, mock_validate_coding):
     """No parallel execution: both agents are called, coverage first (per orchestrator source order)."""
     call_order = []
-    mock_validate_coverage.side_effect = lambda claim, rule_findings=None: call_order.append("coverage") or []
-    mock_validate_coding.side_effect = lambda claim, rule_findings=None: call_order.append("coding") or []
+    mock_validate_coverage.side_effect = lambda claim, rule_findings=None: (call_order.append("coverage") or [], [])
+    mock_validate_coding.side_effect = lambda claim, rule_findings=None: (call_order.append("coding") or [], [])
 
     run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
 
@@ -331,8 +366,8 @@ def test_no_anthropic_client_constructed_when_agents_mocked():
     with patch("agents.orchestrator.validate_coverage") as mock_validate_coverage, \
          patch("agents.orchestrator.validate_coding") as mock_validate_coding, \
          patch("anthropic.Anthropic") as mock_anthropic:
-        mock_validate_coverage.return_value = []
-        mock_validate_coding.return_value = []
+        mock_validate_coverage.return_value = ([], [])
+        mock_validate_coding.return_value = ([], [])
         run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
         mock_anthropic.assert_not_called()
 
@@ -346,7 +381,7 @@ def test_agents_not_called_when_api_key_missing(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with patch("agents.orchestrator.validate_coverage") as mock_validate_coverage, \
          patch("agents.orchestrator.validate_coding") as mock_validate_coding:
-        result = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
+        result, _ = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
 
         mock_validate_coverage.assert_not_called()
         mock_validate_coding.assert_not_called()
@@ -364,7 +399,7 @@ def test_no_anthropic_client_constructed_when_api_key_missing(monkeypatch):
 def test_checks_run_excludes_ai_labels_when_api_key_missing(monkeypatch):
     """Deterministic checks_run is still reported; coverage/coding labels are not, since they didn't run."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    result = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
+    result, _ = run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
 
     for label in CHECKS_RUN:
         assert label in result.checks_run
@@ -377,7 +412,7 @@ def test_deterministic_findings_still_returned_when_api_key_missing(monkeypatch)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     claim = _claim(cpt_codes=["99214", "80053", "80048"], icd10_codes=["Z00.00"])
 
-    result = run_review(claim)
+    result, _ = run_review(claim)
 
     assert any(f.source == "rule_layer" for f in result.findings)
     assert not any(f.source == "agent_layer" for f in result.findings)

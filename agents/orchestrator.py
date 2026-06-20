@@ -47,11 +47,24 @@ def _ai_enabled() -> bool:
     return bool(os.getenv("ANTHROPIC_API_KEY"))
 
 
-def run_review(claim: ClaimIn) -> RiskAssessment:
-    """Run the full claim review: rule layer, then coverage + coding agents if applicable, then synthesis."""
+def run_review(claim: ClaimIn) -> tuple[RiskAssessment, dict[str, list[dict]]]:
+    """
+    Run the full claim review: rule layer, then coverage + coding agents if
+    applicable, then synthesis.
+
+    Returns (assessment, retrieved_policies). retrieved_policies maps
+    "coverage_validation" / "coding_validation" to the up-to-3 policy dicts
+    that agent retrieved for this claim (empty list if that agent didn't run
+    or found nothing) — so the UI can show "Supporting Policies Reviewed"
+    (TD-22) without a second retrieval call. RiskAssessment's own shape is
+    unchanged; this is a sibling return, not a new field on it, so the
+    audit/DB layer (which only ever sees RiskAssessment.findings) is untouched.
+    """
     with timed_run(claim_id=claim.claim_id, agent="rule_layer") as result:
         rule_findings = review_claim(claim)
         result["finding_count"] = len(rule_findings)
+
+    retrieved_policies: dict[str, list[dict]] = {"coverage_validation": [], "coding_validation": []}
 
     if _rule_layer_short_circuited(rule_findings) or not _ai_enabled():
         checks_run = [CHECKS_RUN[0]] if _rule_layer_short_circuited(rule_findings) else list(CHECKS_RUN)
@@ -60,13 +73,16 @@ def run_review(claim: ClaimIn) -> RiskAssessment:
     else:
         checks_run = [*CHECKS_RUN, _COVERAGE_CHECK_LABEL, _CODING_CHECK_LABEL]
         with timed_run(claim_id=claim.claim_id, agent="coverage_validation") as result:
-            coverage_findings = validate_coverage(claim, rule_findings)
+            coverage_findings, coverage_policies = validate_coverage(claim, rule_findings)
+            retrieved_policies["coverage_validation"] = coverage_policies
             result["finding_count"] = len(coverage_findings)
         with timed_run(claim_id=claim.claim_id, agent="coding_validation") as result:
-            coding_findings = validate_coding(claim, rule_findings)
+            coding_findings, coding_policies = validate_coding(claim, rule_findings)
+            retrieved_policies["coding_validation"] = coding_policies
             result["finding_count"] = len(coding_findings)
 
-    return denial_prevention.synthesize(rule_findings, coverage_findings, coding_findings, checks_run)
+    assessment = denial_prevention.synthesize(rule_findings, coverage_findings, coding_findings, checks_run)
+    return assessment, retrieved_policies
 
 
 def _rule_layer_short_circuited(rule_findings: list[Finding]) -> bool:

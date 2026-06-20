@@ -66,7 +66,7 @@ def load_golden_claims(path: Path = _DEFAULT_GOLDEN_SET_PATH) -> list[dict]:
 
 def _run_one_claim(claim_dict: dict) -> set[str]:
     claim = load_claim(claim_dict)
-    risk_assessment = orchestrator.run_review(claim)
+    risk_assessment, _retrieved_policies = orchestrator.run_review(claim)
     return normalize_findings(risk_assessment.findings)
 
 
@@ -86,8 +86,8 @@ def run_evaluation(
     if live:
         actual_by_claim = {c["claim_id"]: _run_one_claim(c) for c in golden_claims}
     else:
-        with patch.object(orchestrator, "validate_coverage", return_value=[]), \
-             patch.object(orchestrator, "validate_coding", return_value=[]):
+        with patch.object(orchestrator, "validate_coverage", return_value=([], [])), \
+             patch.object(orchestrator, "validate_coding", return_value=([], [])):
             actual_by_claim = {c["claim_id"]: _run_one_claim(c) for c in golden_claims}
 
     claim_results: list[ClaimResult] = []

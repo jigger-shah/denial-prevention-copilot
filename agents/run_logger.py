@@ -58,7 +58,7 @@ def timed_run(*, claim_id: str, agent: str):
 
     Usage:
         with timed_run(claim_id=claim.claim_id, agent="coverage_validation") as result:
-            findings = validate_coverage(claim)
+            findings, retrieved_policies = validate_coverage(claim)
             result["finding_count"] = len(findings)
     """
     start = time.perf_counter()

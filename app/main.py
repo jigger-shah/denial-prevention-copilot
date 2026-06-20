@@ -273,7 +273,42 @@ def _render_citation_detail(citation) -> None:
         st.caption(f"Notes: {policy['notes']}")
 
 
-def _finding_card(finding, claim_id: str, reviewer_name: str, repo: AuditRepository) -> None:
+def _render_supporting_policies(retrieved_policies: list[dict], cited_doc_id: str) -> None:
+    """
+    TD-22: list other LCD/NCD policies the agent retrieved and considered for
+    this claim but did not cite as the basis for the finding — separate from
+    the primary citation so it never reads as additional evidence.
+    """
+    others = [p for p in retrieved_policies if p.get("document_id") != cited_doc_id]
+    if not others:
+        return
+    with st.expander(f"📚 Supporting Policies Reviewed ({len(others)})"):
+        st.caption("Considered during AI analysis but not the basis for this finding.")
+        for policy in others:
+            st.markdown(f"**{policy.get('title') or policy.get('document_id', '')}**")
+            meta = policy.get("section", "")
+            if policy.get("effective_date"):
+                meta += f" · effective {policy['effective_date']}"
+            if meta:
+                st.caption(meta)
+            excerpt = policy.get("excerpt")
+            if excerpt:
+                st.markdown(
+                    f'<div style="font-size:0.85rem;color:#374151;font-style:italic;'
+                    f'padding:6px 10px;background:#f9fafb;border-left:3px solid #d1d5db;'
+                    f'border-radius:0 4px 4px 0;margin:4px 0 10px;">'
+                    f'"{excerpt[:400]}"</div>',
+                    unsafe_allow_html=True,
+                )
+
+
+def _finding_card(
+    finding,
+    claim_id: str,
+    reviewer_name: str,
+    repo: AuditRepository,
+    retrieved_policies: list[dict] | None = None,
+) -> None:
     fid = finding.finding_id
     style = _SEVERITY_STYLE.get(finding.severity, {"border": "#6b7280", "card_bg": "#f9fafb"})
 
@@ -304,6 +339,8 @@ def _finding_card(finding, claim_id: str, reviewer_name: str, repo: AuditReposit
                 st.caption("⚠️ **Manual Review Recommended** — confidence below 70%")
             with st.expander("📄 View policy detail"):
                 _render_citation_detail(finding.citation)
+            if retrieved_policies:
+                _render_supporting_policies(retrieved_policies, finding.citation.doc_id)
 
         with col_action:
             decision_key = f"decision_{fid}"
@@ -413,8 +450,20 @@ def _render_checks_summary(findings: list) -> None:
         st.caption("Checks run: " + " · ".join(CHECKS_RUN))
 
 
-def _render_full_review_results(risk_assessment, claim_id: str, reviewer_name: str, repo: AuditRepository) -> None:
-    """Render a RiskAssessment from agents.orchestrator.run_review() — one consolidated findings list."""
+def _render_full_review_results(
+    risk_assessment,
+    claim_id: str,
+    reviewer_name: str,
+    repo: AuditRepository,
+    retrieved_policies: dict[str, list[dict]] | None = None,
+) -> None:
+    """Render a RiskAssessment from agents.orchestrator.run_review() — one consolidated findings list.
+
+    retrieved_policies (TD-22, optional): the sibling dict run_review() returns
+    alongside the RiskAssessment, mapping "coverage_validation"/"coding_validation"
+    to the policies that agent retrieved — used to show "Supporting Policies
+    Reviewed" on the matching finding card.
+    """
     label, kind = _RISK_CONFIG[risk_assessment.score]
     getattr(st, kind)(label)
     _render_risk_explanation(risk_assessment.score, risk_assessment.findings)
@@ -438,7 +487,14 @@ def _render_full_review_results(risk_assessment, claim_id: str, reviewer_name: s
     if risk_assessment.findings:
         st.subheader(f"Findings ({len(risk_assessment.findings)})")
         for finding in risk_assessment.findings:
-            _finding_card(finding, claim_id=claim_id, reviewer_name=reviewer_name, repo=repo)
+            policies_for_finding = (retrieved_policies or {}).get(finding.rule)
+            _finding_card(
+                finding,
+                claim_id=claim_id,
+                reviewer_name=reviewer_name,
+                repo=repo,
+                retrieved_policies=policies_for_finding,
+            )
     else:
         st.success("✅ No findings — rule checks and coverage analysis found no denial risk indicators.")
 
@@ -464,12 +520,14 @@ def _render_ai_section(claim, claim_id: str, reviewer_name: str, repo: AuditRepo
         )
         if st.button("🤖 Run AI Coverage Analysis", key=f"ai_btn_{claim_id}"):
             with st.spinner("Querying policy documents and analyzing coverage…"):
-                ai_findings = validate_coverage(claim)
+                ai_findings, ai_policies = validate_coverage(claim)
             st.session_state["ai_findings"] = ai_findings
+            st.session_state["ai_policies"] = ai_policies
             st.session_state["ai_reviewed"] = True
             st.rerun()
     else:
         ai_findings = st.session_state.get("ai_findings", [])
+        ai_policies = st.session_state.get("ai_policies", [])
         if ai_findings:
             st.caption(f"{len(ai_findings)} finding(s) from AI coverage analysis.")
             for finding in ai_findings:
@@ -478,12 +536,14 @@ def _render_ai_section(claim, claim_id: str, reviewer_name: str, repo: AuditRepo
                     claim_id=claim_id,
                     reviewer_name=reviewer_name,
                     repo=repo,
+                    retrieved_policies=ai_policies,
                 )
         else:
             st.success("✅ No coverage concerns identified by AI analysis.")
 
         if st.button("↩ Clear AI Analysis", key=f"ai_clear_{claim_id}"):
             st.session_state.pop("ai_findings", None)
+            st.session_state.pop("ai_policies", None)
             st.session_state.pop("ai_reviewed", None)
             st.rerun()
 
@@ -546,8 +606,9 @@ def _clear_review_state() -> None:
     for key in (
         "findings", "risk", "reviewed_claim_id",
         "manual_reviewed", "manual_claim_dict",
-        "ai_findings", "ai_reviewed",
-        "full_review_assessment", "full_review_claim_id", "full_review_claim_dict",
+        "ai_findings", "ai_policies", "ai_reviewed",
+        "full_review_assessment", "full_review_retrieved_policies",
+        "full_review_claim_id", "full_review_claim_dict",
     ):
         st.session_state.pop(key, None)
 
@@ -784,6 +845,7 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
     if rows_to_remove:
         st.session_state["manual_active_rows"] = [r for r in active_rows if r not in rows_to_remove]
         _clear_review_state()
+        st.rerun()
 
     # Add / Clear / Load buttons
     btn_add, btn_clear, btn_example, _ = st.columns([1.5, 1.2, 1.8, 4])
@@ -791,6 +853,7 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
         next_id = st.session_state["manual_next_row_id"]
         st.session_state["manual_active_rows"].append(next_id)
         st.session_state["manual_next_row_id"] = next_id + 1
+        st.rerun()
 
     btn_clear.button("🗑 Clear Form", key="manual_clear_btn", on_click=_clear_manual_form)
     btn_example.button("📋 Start from a template", key="manual_example_btn", on_click=_load_worked_example)
@@ -817,7 +880,9 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
         else:
             _clear_review_state()
             claim = load_claim(claim_dict)
-            st.session_state["full_review_assessment"] = run_review(claim)
+            assessment, retrieved_policies = run_review(claim)
+            st.session_state["full_review_assessment"] = assessment
+            st.session_state["full_review_retrieved_policies"] = retrieved_policies
             st.session_state["full_review_claim_id"] = claim_dict["claim_id"]
             st.session_state["full_review_claim_dict"] = claim_dict
 
@@ -827,6 +892,7 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
             claim_id=st.session_state["full_review_claim_id"],
             reviewer_name=reviewer_name,
             repo=repo,
+            retrieved_policies=st.session_state.get("full_review_retrieved_policies"),
         )
 
     if run_rule_clicked:
@@ -934,7 +1000,9 @@ def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
     if run_full_clicked:
         _clear_review_state()
         claim = load_claim(claim_dict)
-        st.session_state["full_review_assessment"] = run_review(claim)
+        assessment, retrieved_policies = run_review(claim)
+        st.session_state["full_review_assessment"] = assessment
+        st.session_state["full_review_retrieved_policies"] = retrieved_policies
         st.session_state["full_review_claim_id"] = claim_dict["claim_id"]
 
     if (
@@ -946,6 +1014,7 @@ def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
             claim_id=claim_dict["claim_id"],
             reviewer_name=reviewer_name,
             repo=repo,
+            retrieved_policies=st.session_state.get("full_review_retrieved_policies"),
         )
         _render_cached_ai_demo(claim_dict["claim_id"])
 

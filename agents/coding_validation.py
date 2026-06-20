@@ -164,10 +164,17 @@ _TOOLS = [
 ]
 
 
-def validate_coding(claim: ClaimIn, rule_findings: list[Finding] | None = None) -> list[Finding]:
+def validate_coding(
+    claim: ClaimIn, rule_findings: list[Finding] | None = None
+) -> tuple[list[Finding], list[dict]]:
     """
-    Run coding defensibility validation for a claim. Returns a list of Finding
-    objects (0 or 1 in practice — one model call, one tool call).
+    Run coding defensibility validation for a claim. Returns (findings, retrieved_policies):
+      - findings: 0 or 1 Finding in practice — one model call, one tool call.
+      - retrieved_policies: up to 3 policy dicts considered for this claim
+        (document_id, title, section, effective_date, edition, excerpt), so the
+        UI can show "Supporting Policies Reviewed" — other policies considered
+        but not the basis for the finding (TD-22). This is the same retrieval
+        already done internally; no new retrieval or model call.
 
     rule_findings (optional, TD-24 Phase 3): the rule-layer findings already
     identified for this claim, if any. Passed through to the model so it can
@@ -175,16 +182,16 @@ def validate_coding(claim: ClaimIn, rule_findings: list[Finding] | None = None) 
     engine already raised — see _SYSTEM_PROMPT. Omitting it (the default)
     preserves prior behavior exactly.
 
-    Returns [] if no API key, no matching LCD/NCD policies, model error, or
+    findings is [] if no API key, no matching LCD/NCD policies, model error, or
     model calls no_coding_concern.
     """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        return []
+        return [], []
 
     lcd_policies = _retrieve_policies(claim)
     if not lcd_policies:
-        return []
+        return [], []
 
     retrieved_doc_ids = {p["document_id"] for p in lcd_policies}
 
@@ -203,9 +210,10 @@ def validate_coding(claim: ClaimIn, rule_findings: list[Finding] | None = None) 
         )
     except Exception as exc:
         logger.warning("Coding validation API error: %s", exc)
-        return []
+        return [], lcd_policies
 
-    return _parse_response(response, retrieved_doc_ids, lcd_policies, claim.claim_id)
+    findings = _parse_response(response, retrieved_doc_ids, lcd_policies, claim.claim_id)
+    return findings, lcd_policies
 
 
 def _get_vector_store() -> VectorStore:
