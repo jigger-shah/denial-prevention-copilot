@@ -59,6 +59,26 @@ DANGLING_LEAD_CHARS = ")]}.,;:!?\"'’”–—"
 
 _SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+")
 
+# Phrases that indicate a citation excerpt is navigational/boilerplate rather
+# than substantive supporting text — grammatically complete, so
+# starts_with_dangling_fragment() never catches them (see TD-26: the model
+# selected "Scroll down for links to the quarterly Covered Code Lists..." as
+# a citation_excerpt, which is a real, complete sentence but carries no
+# medical-necessity or coding substance).
+_LOW_INFORMATION_PHRASES = (
+    "scroll down",
+    "see below",
+    "see above",
+    "click here",
+    "click the link",
+    "for more information",
+    "for additional information",
+    "refer to the link",
+    "links to the",
+    "table of contents",
+    "this page",
+)
+
 
 def chunk_document(document: dict, max_chunk_chars: int = DEFAULT_MAX_CHUNK_CHARS) -> list[dict]:
     """
@@ -109,6 +129,19 @@ def starts_with_dangling_fragment(text: str) -> bool:
 def trim_leading_fragment(text: str) -> str:
     """Strip any leading run of dangling closing-punctuation/quote characters left over from a hard split."""
     return text.lstrip(DANGLING_LEAD_CHARS + " ")
+
+
+def is_low_information_excerpt(text: str) -> bool:
+    """
+    True if text is grammatically complete but navigational/boilerplate
+    rather than substantive — e.g. "Scroll down for links to the quarterly
+    Covered Code Lists." This complements starts_with_dangling_fragment(),
+    which only catches mid-sentence cuts, not low-substance complete sentences.
+    """
+    lowered = text.strip().lower()
+    if not lowered:
+        return True
+    return any(phrase in lowered for phrase in _LOW_INFORMATION_PHRASES)
 
 
 def _clean_entities(text: str) -> str:

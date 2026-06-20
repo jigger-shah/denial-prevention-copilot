@@ -33,7 +33,11 @@ import re
 import anthropic
 from dotenv import load_dotenv
 
-from retrieval.chunking import starts_with_dangling_fragment, trim_leading_fragment
+from retrieval.chunking import (
+    is_low_information_excerpt,
+    starts_with_dangling_fragment,
+    trim_leading_fragment,
+)
 from retrieval.policy_repository import find_policies_by_codes
 from retrieval.vector_store import VectorStore
 from rules.models import Citation, ClaimIn, Finding
@@ -62,6 +66,20 @@ _SYSTEM_PROMPT = (
     "or any deterministic rule-engine findings. Assume those checks have already been "
     "performed. Focus only on coding defensibility, diagnosis specificity, "
     "diagnosis-to-procedure support, and payer scrutiny risk.\n\n"
+    "The claim summary lists any deterministic rule-layer findings already identified for this "
+    "claim (NCCI bundling edits, MUE unit limits, modifier requirements, ICD-10/CPT code validity, "
+    "diagnosis-procedure conflicts), or the word \"none\" if the rule layer found nothing.\n\n"
+    "If that list is \"none\": evaluate the claim normally, based solely on the provided policy "
+    "text, exactly as if no other check had run. The absence of a rule-layer finding is not "
+    "evidence that the claim is clean — do not become more conservative or default toward "
+    "no_coding_concern just because the list is empty. Report a genuine, policy-supported coding "
+    "defensibility concern whenever you find one.\n\n"
+    "If that list is non-empty: Do not restate or duplicate those findings. In this case only, "
+    "apply a stricter standard: call report_coding_finding only if the policy text reveals a "
+    "coding-defensibility concern that is genuinely distinct from those findings, independently "
+    "supported by the cited text, and material to denial risk — not a generic restatement of the "
+    "same code combination or a vague payer-scrutiny caveat. If the rule-layer findings already "
+    "explain the claim's risk and the policy text adds nothing distinct, call no_coding_concern.\n\n"
     "Rules:\n"
     "- Only cite a policy document that was provided to you in this message.\n"
     "- Do not invent, guess, or recall policy text from training data.\n"
@@ -69,6 +87,8 @@ _SYSTEM_PROMPT = (
     "call no_coding_concern.\n"
     "- If you identify a coding defensibility concern supported by the policy text, "
     "call report_coding_finding with a specific citation from the provided documents.\n"
+    "- Do not call report_coding_finding for a generic payer-scrutiny caution that is not tied to a "
+    "specific, cited policy concern.\n"
     "- You must call exactly one tool."
 )
 
@@ -144,10 +164,16 @@ _TOOLS = [
 ]
 
 
-def validate_coding(claim: ClaimIn) -> list[Finding]:
+def validate_coding(claim: ClaimIn, rule_findings: list[Finding] | None = None) -> list[Finding]:
     """
     Run coding defensibility validation for a claim. Returns a list of Finding
     objects (0 or 1 in practice — one model call, one tool call).
+
+    rule_findings (optional, TD-24 Phase 3): the rule-layer findings already
+    identified for this claim, if any. Passed through to the model so it can
+    avoid restating or piling on top of a deterministic finding the rule
+    engine already raised — see _SYSTEM_PROMPT. Omitting it (the default)
+    preserves prior behavior exactly.
 
     Returns [] if no API key, no matching LCD/NCD policies, model error, or
     model calls no_coding_concern.
@@ -163,7 +189,7 @@ def validate_coding(claim: ClaimIn) -> list[Finding]:
     retrieved_doc_ids = {p["document_id"] for p in lcd_policies}
 
     model = os.getenv("ANTHROPIC_MODEL", _DEFAULT_MODEL)
-    user_message = _build_user_message(claim, lcd_policies)
+    user_message = _build_user_message(claim, lcd_policies, rule_findings)
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
@@ -273,26 +299,43 @@ def _sentence_snippet(text: str, max_chars: int = _EXCERPT_SNIPPET_MAX_CHARS) ->
 
 def _clean_citation_excerpt(model_excerpt: str, fallback_chunk_text: str) -> str:
     """
-    Use the model's citation_excerpt if it reads as clean, complete text.
+    Use the model's citation_excerpt if it reads as clean, complete,
+    substantive text.
 
-    If it's empty or starts with dangling closing punctuation/quotes (a sign
-    the model echoed a mid-sentence chunk boundary, or otherwise produced a
-    fragment), fall back to a cleaned, sentence-bounded snippet of the actual
-    retrieved policy text it was grounded in — never raw, unfiltered model output
-    in that case, and never an empty excerpt when a retrieved chunk is available.
+    Falls back to a cleaned, sentence-bounded snippet of the actual retrieved
+    policy text it was grounded in — never raw, unfiltered model output — when
+    the model's excerpt is empty, starts with dangling closing punctuation/
+    quotes (a sign of a mid-sentence chunk boundary), or is low-information
+    boilerplate (grammatically complete but navigational, e.g. "Scroll down
+    for links..." — see TD-26). Never an empty excerpt when a retrieved chunk
+    is available.
     """
     candidate = (model_excerpt or "").strip()
-    if candidate and not starts_with_dangling_fragment(candidate):
+    if (
+        candidate
+        and not starts_with_dangling_fragment(candidate)
+        and not is_low_information_excerpt(candidate)
+    ):
         return candidate
     if fallback_chunk_text:
         return _sentence_snippet(fallback_chunk_text)
     return candidate
 
 
-def _build_user_message(claim: ClaimIn, lcd_policies: list[dict]) -> str:
+def _summarize_rule_findings(rule_findings: list[Finding] | None) -> str:
+    """Comma-joined, de-duplicated rule names already raised by the rule layer, or 'none'."""
+    if not rule_findings:
+        return "none"
+    return ", ".join(dict.fromkeys(f.rule for f in rule_findings))
+
+
+def _build_user_message(
+    claim: ClaimIn, lcd_policies: list[dict], rule_findings: list[Finding] | None = None
+) -> str:
     cpt = ", ".join(claim.cpt_codes) if claim.cpt_codes else "none"
     icd = ", ".join(claim.icd10_codes) if claim.icd10_codes else "none"
     mods = ", ".join(claim.modifiers) if claim.modifiers else "none"
+    rule_summary = _summarize_rule_findings(rule_findings)
 
     policy_blocks = []
     for p in lcd_policies:
@@ -312,13 +355,16 @@ def _build_user_message(claim: ClaimIn, lcd_policies: list[dict]) -> str:
         f"ICD-10 codes: {icd}\n"
         f"Modifiers: {mods}\n"
         f"Place of service: {claim.place_of_service}\n"
-        f"Payer: {claim.payer}\n\n"
+        f"Payer: {claim.payer}\n"
+        f"Rule-layer findings already identified for this claim: {rule_summary}\n\n"
         f"RELEVANT POLICY DOCUMENTS ({len(lcd_policies)} retrieved)\n\n"
         + "\n\n".join(policy_blocks)
         + "\n\n"
         "Review the diagnosis and procedure codes on this claim against the policy documents "
-        "above for coding defensibility. Call report_coding_finding if you identify a coding "
-        "defensibility concern, or call no_coding_concern if the codes are well-supported."
+        "above for coding defensibility. Call report_coding_finding only if you identify a coding "
+        "defensibility concern that is distinct from the rule-layer findings listed above, "
+        "independently supported by the cited policy text, and material to denial risk. Otherwise "
+        "call no_coding_concern."
     )
 
 

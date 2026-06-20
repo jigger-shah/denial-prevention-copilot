@@ -286,6 +286,7 @@ def _save_controls(
             citation_section=finding.citation.section,
             citation_edition=finding.citation.edition,
             citation_effective_date=finding.citation.effective_date,
+            citation_excerpt=finding.citation.excerpt,
             confidence=finding.confidence,
             user_decision=user_decision,
             override_reason=st.session_state.get(reason_key, ""),

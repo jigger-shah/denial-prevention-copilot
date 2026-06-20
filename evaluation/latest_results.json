@@ -119,10 +119,16 @@
   },
   {
     "claim_id": "GOLD-008",
-    "description": "Clean claim \u2014 preventive visit code correctly paired with well-visit diagnosis, no findings expected",
-    "expected_findings": [],
-    "actual_findings": [],
-    "true_positives": 0,
+    "description": "Rule-layer-clean preventive visit (CPT/ICD-10 pairing and NCCI/MUE all correct) \u2014 but v1.7 live-agent analysis (TD-24) confirmed Medicare Part B does not broadly cover CPT 99395 the way commercial payers do (Medicare preventive visits use HCPCS G-codes instead), so both agents correctly and defensibly flag a real coverage/coding concern. Originally labeled agent-negative; relabeled after live evidence showed this was a golden-set label gap, not agent over-flagging. See GOLD-015 for the deliberately agent-negative baseline.",
+    "expected_findings": [
+      "coding_defensibility",
+      "coverage_medical_necessity"
+    ],
+    "actual_findings": [
+      "coding_defensibility",
+      "coverage_medical_necessity"
+    ],
+    "true_positives": 2,
     "false_positives": 0,
     "false_negatives": 0,
     "precision": 1.0,
@@ -131,14 +137,16 @@
   },
   {
     "claim_id": "GOLD-009",
-    "description": "Problem-oriented E/M with a matching acute diagnosis, dx-procedure pairing is clean \u2014 J06.9's own description is unspecified, so the v1.5 ICD-10 rule-layer check still flags it",
+    "description": "Problem-oriented E/M with a matching acute diagnosis, dx-procedure pairing is clean \u2014 J06.9's own description is unspecified, so the v1.5 ICD-10 rule-layer check still flags it. v1.7 live-agent analysis (TD-24) confirmed the Coding Agent also defensibly questions medical necessity of a CBC for a routine acute URI diagnosis alone \u2014 a real coding_defensibility concern, not over-flagging.",
     "expected_findings": [
+      "coding_defensibility",
       "unspecified_diagnosis"
     ],
     "actual_findings": [
+      "coding_defensibility",
       "unspecified_diagnosis"
     ],
-    "true_positives": 1,
+    "true_positives": 2,
     "false_positives": 0,
     "false_negatives": 0,
     "precision": 1.0,
@@ -151,13 +159,16 @@
     "expected_findings": [
       "coverage_medical_necessity"
     ],
-    "actual_findings": [],
-    "true_positives": 0,
-    "false_positives": 0,
-    "false_negatives": 1,
-    "precision": 0.0,
-    "recall": 0.0,
-    "f1": 0.0
+    "actual_findings": [
+      "coding_defensibility",
+      "coverage_medical_necessity"
+    ],
+    "true_positives": 1,
+    "false_positives": 1,
+    "false_negatives": 0,
+    "precision": 0.5,
+    "recall": 1.0,
+    "f1": 0.6666666666666666
   },
   {
     "claim_id": "GOLD-011",
@@ -184,14 +195,15 @@
       "ncci_conflict"
     ],
     "actual_findings": [
+      "coding_defensibility",
       "ncci_conflict"
     ],
     "true_positives": 1,
-    "false_positives": 0,
+    "false_positives": 1,
     "false_negatives": 1,
-    "precision": 1.0,
+    "precision": 0.5,
     "recall": 0.5,
-    "f1": 0.6666666666666666
+    "f1": 0.5
   },
   {
     "claim_id": "GOLD-013",
@@ -201,14 +213,15 @@
       "missing_modifier_25"
     ],
     "actual_findings": [
+      "coding_defensibility",
       "missing_modifier_25"
     ],
-    "true_positives": 1,
+    "true_positives": 2,
     "false_positives": 0,
-    "false_negatives": 1,
+    "false_negatives": 0,
     "precision": 1.0,
-    "recall": 0.5,
-    "f1": 0.6666666666666666
+    "recall": 1.0,
+    "f1": 1.0
   },
   {
     "claim_id": "GOLD-014",
@@ -233,5 +246,17 @@
     "precision": 1.0,
     "recall": 0.6666666666666666,
     "f1": 0.8
+  },
+  {
+    "claim_id": "GOLD-015",
+    "description": "Deliberately agent-negative claim (added v1.7, TD-24) \u2014 established-patient office visit for a common, well-documented chronic condition (essential hypertension) with no preventive/coding mismatch, no NCCI/MUE issue, and no plausible coverage or coding-defensibility concern. Verified via a live evaluation probe to confirm Coverage and Coding Agents return no findings before adding to the golden set, addressing the lack of an explicit agent-negative baseline noted in TD-24.",
+    "expected_findings": [],
+    "actual_findings": [],
+    "true_positives": 0,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
   }
 ]

@@ -76,6 +76,37 @@ def test_overridden_decision_persists_with_reason(repo):
     assert rows[0]["override_reason"] == "Provider confirmed separate diagnosis in chart"
 
 
+def test_citation_excerpt_persists(repo):
+    """TD-20: citation_excerpt must round-trip through save_decision/get_decisions."""
+    repo.save_decision(_make_decision(
+        citation_excerpt="CPT code 80048 is a component of CPT code 80053.",
+    ))
+
+    rows = repo.get_decisions(claim_id="CLM-001")
+    assert rows[0]["citation_excerpt"] == "CPT code 80048 is a component of CPT code 80053."
+
+
+def test_citation_excerpt_defaults_to_none(repo):
+    """Decisions saved without an explicit excerpt must not fail and store NULL."""
+    repo.save_decision(_make_decision())
+
+    rows = repo.get_decisions(claim_id="CLM-001")
+    assert rows[0]["citation_excerpt"] is None
+
+
+def test_initialize_database_is_idempotent_with_excerpt_migration(tmp_path):
+    """Calling initialize_database() twice (simulating an existing pre-v1.7 DB) must not raise."""
+    db_path = tmp_path / "preexisting.db"
+    r1 = AuditRepository(db_path=db_path)
+    r1.initialize_database()
+    r2 = AuditRepository(db_path=db_path)
+    r2.initialize_database()  # should not raise even though the column already exists
+
+    r2.save_decision(_make_decision(citation_excerpt="re-init still works"))
+    rows = r2.get_decisions()
+    assert rows[0]["citation_excerpt"] == "re-init still works"
+
+
 def test_multiple_decisions_accumulate(repo):
     """The table is append-only; multiple saves must all be present."""
     repo.save_decision(_make_decision(finding_id="id_aaa"))
@@ -168,7 +199,7 @@ def test_export_contains_expected_columns(repo):
     expected_cols = [
         "id", "timestamp", "claim_id", "finding_id", "severity",
         "user_decision", "reviewer_name", "confidence",
-        "citation_source", "citation_doc_id",
+        "citation_source", "citation_doc_id", "citation_excerpt",
     ]
     for col in expected_cols:
         assert col in header, f"Expected column '{col}' missing from CSV header"

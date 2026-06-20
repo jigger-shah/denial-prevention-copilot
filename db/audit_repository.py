@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS audit_decisions (
     citation_section         TEXT    NOT NULL,
     citation_edition         TEXT    NOT NULL,
     citation_effective_date  TEXT,
+    citation_excerpt         TEXT,
     confidence               REAL    NOT NULL,
     user_decision            TEXT    NOT NULL,
     override_reason          TEXT    NOT NULL DEFAULT '',
@@ -53,13 +54,19 @@ _MIGRATE_ADD_EFFECTIVE_DATE_SQL = """
 ALTER TABLE audit_decisions ADD COLUMN citation_effective_date TEXT;
 """
 
+# Backward-compatible migration: add citation_excerpt to existing databases
+# that were created before v1.7 (TD-20). Same safe ALTER TABLE pattern as above.
+_MIGRATE_ADD_EXCERPT_SQL = """
+ALTER TABLE audit_decisions ADD COLUMN citation_excerpt TEXT;
+"""
+
 _INSERT_SQL = """
 INSERT INTO audit_decisions (
     timestamp, claim_id, finding_id, source, severity, issue,
     recommendation, citation_source, citation_doc_id, citation_section,
-    citation_edition, citation_effective_date, confidence, user_decision,
-    override_reason, reviewer_name, model_version, prompt_version
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    citation_edition, citation_effective_date, citation_excerpt, confidence,
+    user_decision, override_reason, reviewer_name, model_version, prompt_version
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 
@@ -83,6 +90,7 @@ class AuditDecision:
     model_version: str
     prompt_version: str
     citation_effective_date: Optional[str] = None
+    citation_excerpt: Optional[str] = None
     id: Optional[int] = None
     timestamp: Optional[str] = None
 
@@ -103,6 +111,11 @@ class AuditRepository:
             # SQLite raises OperationalError if the column already exists; ignore it.
             try:
                 conn.execute(_MIGRATE_ADD_EFFECTIVE_DATE_SQL)
+            except Exception:
+                pass
+            # v1.7 migration: add citation_excerpt to existing DBs.
+            try:
+                conn.execute(_MIGRATE_ADD_EXCERPT_SQL)
             except Exception:
                 pass
             conn.commit()
@@ -140,6 +153,7 @@ class AuditRepository:
                     decision.citation_section,
                     decision.citation_edition,
                     decision.citation_effective_date,
+                    decision.citation_excerpt,
                     decision.confidence,
                     decision.user_decision,
                     decision.override_reason,

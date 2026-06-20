@@ -11,7 +11,7 @@ this module first (deterministic checks) before dispatching agents.
 import hashlib
 
 from rules.models import ClaimIn, Finding
-from rules import ncci, mue, code_validity, npi, icd10
+from rules import ncci, mue, code_validity, npi, icd10, hcpcs
 
 
 _SEVERITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
@@ -24,8 +24,9 @@ CHECKS_RUN: list[str] = [
     "NCCI PTP — procedure bundling edits",
     "MUE — medically unlikely unit limits",
     "Code validity — diagnosis-to-procedure conflict",
-    "Code validity — modifier 25 requirement",
+    "Code validity — modifier requirements (25, 50, 76)",
     "ICD-10-CM — code validity + unspecified diagnosis",
+    "HCPCS Level II — curated common-code recognition",
 ]
 
 
@@ -88,6 +89,7 @@ def review_claim(claim: ClaimIn) -> list[Finding]:
     findings.extend(mue.check_mue_limits(claim))
     findings.extend(code_validity.check_code_validity(claim))
     findings.extend(icd10.check_icd10_validity(claim))
+    findings.extend(hcpcs.check_hcpcs_validity(claim))
     findings.sort(key=lambda f: _SEVERITY_ORDER.get(f.severity, 9))
 
     for finding in findings:

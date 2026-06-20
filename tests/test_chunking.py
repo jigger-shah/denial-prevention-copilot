@@ -4,6 +4,7 @@ import pytest
 
 from retrieval.chunking import (
     chunk_document,
+    is_low_information_excerpt,
     starts_with_dangling_fragment,
     trim_leading_fragment,
     _split_section_text,
@@ -231,3 +232,32 @@ def test_no_chunk_in_real_lcd_text_begins_with_dangling_punctuation():
         assert not chunk["text"].startswith(")")
         assert not chunk["text"].startswith(".")
         assert not starts_with_dangling_fragment(chunk["text"])
+
+
+# ---------------------------------------------------------------------------
+# TD-26: low-information / navigational excerpt detection
+# ---------------------------------------------------------------------------
+
+def test_is_low_information_excerpt_detects_known_weak_excerpt():
+    # The real, observed weak excerpt from TD-26 — grammatically complete,
+    # so starts_with_dangling_fragment() never flags it.
+    text = "Scroll down for links to the quarterly Covered Code Lists (including narrative)."
+    assert not starts_with_dangling_fragment(text)
+    assert is_low_information_excerpt(text)
+
+
+def test_is_low_information_excerpt_detects_other_navigational_phrases():
+    assert is_low_information_excerpt("See below for the full list of covered diagnosis codes.")
+    assert is_low_information_excerpt("Click here for additional information about coverage.")
+    assert is_low_information_excerpt("Refer to the link above for more information.")
+
+
+def test_is_low_information_excerpt_false_for_substantive_text():
+    assert not is_low_information_excerpt(
+        "HbA1c testing is reasonable and necessary for stable glycemic control patients."
+    )
+
+
+def test_is_low_information_excerpt_true_for_empty_text():
+    assert is_low_information_excerpt("")
+    assert is_low_information_excerpt("   ")

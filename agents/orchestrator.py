@@ -9,7 +9,9 @@ Deterministic Python controller, not a free-running LLM loop:
      Agent (agents.coding_validation.validate_coding()) sequentially — no parallel
      execution. If the rule layer short-circuited, neither agent is called: an
      invalid provider identity makes an LLM call pointless and costs an
-     unnecessary API call.
+     unnecessary API call. rule_findings is passed to both agents (TD-24 Phase 3)
+     so their prompts can avoid restating or piling on top of a deterministic
+     finding the rule engine already raised.
   3. Pass rule findings + coverage findings + coding findings to
      agents.denial_prevention.synthesize() for deterministic scoring — no LLM
      call happens in this module or in denial_prevention.
@@ -58,10 +60,10 @@ def run_review(claim: ClaimIn) -> RiskAssessment:
     else:
         checks_run = [*CHECKS_RUN, _COVERAGE_CHECK_LABEL, _CODING_CHECK_LABEL]
         with timed_run(claim_id=claim.claim_id, agent="coverage_validation") as result:
-            coverage_findings = validate_coverage(claim)
+            coverage_findings = validate_coverage(claim, rule_findings)
             result["finding_count"] = len(coverage_findings)
         with timed_run(claim_id=claim.claim_id, agent="coding_validation") as result:
-            coding_findings = validate_coding(claim)
+            coding_findings = validate_coding(claim, rule_findings)
             result["finding_count"] = len(coding_findings)
 
     return denial_prevention.synthesize(rule_findings, coverage_findings, coding_findings, checks_run)

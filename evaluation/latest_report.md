@@ -1,17 +1,17 @@
 # Golden Set Evaluation Report
 
-Generated: 2026-06-19 15:52 UTC
-Mode: **offline** — Coverage/Coding Agent calls mocked to return no findings; their categories below reflect that, not agent accuracy. Run with --live for a real read.
-Claims evaluated: 14
+Generated: 2026-06-20 00:07 UTC
+Mode: **live**
+Claims evaluated: 15
 
 ## Metrics
 
 | Category | TP | FP | FN | Precision | Recall | F1 |
 |---|---|---|---|---|---|---|
-| Overall | 18 | 0 | 6 | 1.00 | 0.75 | 0.86 |
+| Overall | 23 | 2 | 4 | 0.92 | 0.85 | 0.88 |
 | Rule Engine | 18 | 0 | 0 | 1.00 | 1.00 | 1.00 |
-| Coverage Agent | 0 | 0 | 3 | 0.00 | 0.00 | 0.00 |
-| Coding Agent | 0 | 0 | 3 | 0.00 | 0.00 | 0.00 |
+| Coverage Agent | 2 | 0 | 2 | 1.00 | 0.50 | 0.67 |
+| Coding Agent | 3 | 2 | 2 | 0.60 | 0.60 | 0.60 |
 
 ## Claim-level results
 
@@ -24,10 +24,11 @@ Claims evaluated: 14
 | GOLD-005 | missing_modifier_25 | missing_modifier_25 | 1 | 0 | 0 |
 | GOLD-006 | diagnosis_procedure_mismatch | diagnosis_procedure_mismatch | 1 | 0 | 0 |
 | GOLD-007 | diagnosis_procedure_mismatch, missing_modifier_25, mue_limit, ncci_conflict | diagnosis_procedure_mismatch, missing_modifier_25, mue_limit, ncci_conflict | 4 | 0 | 0 |
-| GOLD-008 | (none) | (none) | 0 | 0 | 0 |
-| GOLD-009 | unspecified_diagnosis | unspecified_diagnosis | 1 | 0 | 0 |
-| GOLD-010 | coverage_medical_necessity | (none) | 0 | 0 | 1 |
+| GOLD-008 | coding_defensibility, coverage_medical_necessity | coding_defensibility, coverage_medical_necessity | 2 | 0 | 0 |
+| GOLD-009 | coding_defensibility, unspecified_diagnosis | coding_defensibility, unspecified_diagnosis | 2 | 0 | 0 |
+| GOLD-010 | coverage_medical_necessity | coding_defensibility, coverage_medical_necessity | 1 | 1 | 0 |
 | GOLD-011 | coding_defensibility, unspecified_diagnosis | unspecified_diagnosis | 1 | 0 | 1 |
-| GOLD-012 | coverage_medical_necessity, ncci_conflict | ncci_conflict | 1 | 0 | 1 |
-| GOLD-013 | coding_defensibility, missing_modifier_25 | missing_modifier_25 | 1 | 0 | 1 |
+| GOLD-012 | coverage_medical_necessity, ncci_conflict | coding_defensibility, ncci_conflict | 1 | 1 | 1 |
+| GOLD-013 | coding_defensibility, missing_modifier_25 | coding_defensibility, missing_modifier_25 | 2 | 0 | 0 |
 | GOLD-014 | coding_defensibility, coverage_medical_necessity, diagnosis_procedure_mismatch, missing_modifier_25, mue_limit, ncci_conflict | diagnosis_procedure_mismatch, missing_modifier_25, mue_limit, ncci_conflict | 4 | 0 | 2 |
+| GOLD-015 | (none) | (none) | 0 | 0 | 0 |

@@ -19,8 +19,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agents.coding_validation import validate_coding, _stable_finding_id
-from rules.models import ClaimIn
+from agents.coding_validation import (
+    _SYSTEM_PROMPT,
+    _build_user_message,
+    _summarize_rule_findings,
+    validate_coding,
+    _stable_finding_id,
+)
+from rules.models import Citation, ClaimIn, Finding
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +505,29 @@ def test_clean_citation_excerpt_returns_dangling_text_if_no_fallback_available()
     assert result == ") dangling model text."
 
 
+# ---------------------------------------------------------------------------
+# TD-26: low-information excerpt handling
+# ---------------------------------------------------------------------------
+
+def test_clean_citation_excerpt_falls_back_when_model_excerpt_is_low_information():
+    """The real, observed TD-26 weak excerpt: complete sentence, no substance."""
+    from agents.coding_validation import _clean_citation_excerpt
+
+    result = _clean_citation_excerpt(
+        "Scroll down for links to the quarterly Covered Code Lists (including narrative).",
+        fallback_chunk_text="CBC with differential is reasonable and necessary to evaluate suspected infection.",
+    )
+    assert result == "CBC with differential is reasonable and necessary to evaluate suspected infection."
+
+
+def test_clean_citation_excerpt_returns_low_information_text_if_no_better_fallback():
+    """With no substantive fallback available, still return something rather than an empty excerpt."""
+    from agents.coding_validation import _clean_citation_excerpt
+
+    result = _clean_citation_excerpt("Scroll down for links to the quarterly Covered Code Lists.", fallback_chunk_text="")
+    assert result == "Scroll down for links to the quarterly Covered Code Lists."
+
+
 @patch("agents.coding_validation.anthropic.Anthropic")
 def test_vector_citation_excerpt_does_not_begin_with_dangling_paren(mock_anthropic, mock_vector_store, monkeypatch):
     """
@@ -560,3 +589,81 @@ def test_vector_citation_grounding_still_passes_with_clean_excerpt(mock_anthropi
     assert len(findings) == 1
     assert findings[0].citation.doc_id == "33431"
     assert findings[0].citation.excerpt == "HbA1c testing requires a diagnosis code reflecting glycemic control status."
+
+
+# ---------------------------------------------------------------------------
+# Tests: TD-24 Phase 3 — anti-pile-on prompt guidance
+# ---------------------------------------------------------------------------
+
+def _rule_finding(rule="ncci_conflict"):
+    return Finding(
+        rule=rule,
+        severity="HIGH",
+        issue="Test rule-layer finding",
+        recommendation="Test recommendation",
+        citation=Citation(source="NCCI PTP", doc_id="test-doc", section="Test Section", edition="test"),
+        confidence=0.9,
+        source="rule_layer",
+    )
+
+
+def test_system_prompt_instructs_not_to_duplicate_rule_layer_findings():
+    """TD-24 Phase 3: system prompt must tell the model not to restate rule-layer findings."""
+    assert "Do not restate or duplicate" in _SYSTEM_PROMPT
+    assert "no_coding_concern" in _SYSTEM_PROMPT
+    assert "genuinely" in _SYSTEM_PROMPT and "distinct" in _SYSTEM_PROMPT
+
+
+def test_system_prompt_forbids_generic_payer_scrutiny_caveats():
+    """TD-24 Phase 3: system prompt must explicitly forbid generic payer-scrutiny cautions."""
+    assert "generic payer-scrutiny caution" in _SYSTEM_PROMPT
+
+
+def test_summarize_rule_findings_returns_none_for_empty_or_missing():
+    assert _summarize_rule_findings(None) == "none"
+    assert _summarize_rule_findings([]) == "none"
+
+
+def test_summarize_rule_findings_lists_deduplicated_rule_names():
+    findings = [_rule_finding("ncci_conflict"), _rule_finding("ncci_conflict"), _rule_finding("mue_limit")]
+    assert _summarize_rule_findings(findings) == "ncci_conflict, mue_limit"
+
+
+def test_build_user_message_includes_rule_findings_line_when_present():
+    message = _build_user_message(_claim(cpt_codes=["83036"]), [], [_rule_finding("missing_modifier_25")])
+    assert "Rule-layer findings already identified for this claim: missing_modifier_25" in message
+
+
+def test_build_user_message_reports_none_when_no_rule_findings():
+    message = _build_user_message(_claim(cpt_codes=["83036"]), [], None)
+    assert "Rule-layer findings already identified for this claim: none" in message
+
+
+@patch("agents.coding_validation.anthropic.Anthropic")
+def test_validate_coding_passes_rule_findings_into_prompt(mock_anthropic, monkeypatch):
+    """rule_findings passed to validate_coding() must reach the model's user message."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    tool_block = _tool_use_block("no_coding_concern", {"reason": "already explained by rule layer"})
+    mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
+
+    rule_findings = [_rule_finding("ncci_conflict")]
+    validate_coding(_claim(cpt_codes=["83036"], icd10_codes=["Z00.00"]), rule_findings)
+
+    _, kwargs = mock_anthropic.return_value.messages.create.call_args
+    sent_message = kwargs["messages"][0]["content"]
+    assert "Rule-layer findings already identified for this claim: ncci_conflict" in sent_message
+
+
+@patch("agents.coding_validation.anthropic.Anthropic")
+def test_validate_coding_without_rule_findings_still_works(mock_anthropic, monkeypatch):
+    """Omitting rule_findings (default None) preserves prior call behavior exactly."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    tool_block = _tool_use_block("no_coding_concern", {"reason": "fine"})
+    mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
+
+    result = validate_coding(_claim(cpt_codes=["83036"], icd10_codes=["Z00.00"]))
+
+    assert result == []
+    _, kwargs = mock_anthropic.return_value.messages.create.call_args
+    sent_message = kwargs["messages"][0]["content"]
+    assert "Rule-layer findings already identified for this claim: none" in sent_message

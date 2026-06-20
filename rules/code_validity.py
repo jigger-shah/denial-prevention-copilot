@@ -1,10 +1,13 @@
 """
-Code validity and diagnosis-to-procedure conflict checks.
+Code validity, diagnosis-to-procedure conflict, and modifier-presence checks.
 
-Sprint 1: backed by hardcoded sample rule tables.
+Backed by hardcoded, curated rule tables (not file-backed — see each
+citation_edition string). Covers: Z00.00 dx-procedure conflicts, and missing
+modifier 25 (preventive context), 76/77 (repeat procedure), and 50
+(bilateral procedure).
 Production path: replace _load_dx_procedure_rules() with a loader that reads
-ICD-10-CM reference data from data/reference/; replace _load_modifier_rules()
-with the NCCI Policy Manual modifier guidance.
+ICD-10-CM reference data from data/reference/; replace the modifier rule
+loaders with the NCCI Policy Manual modifier guidance.
 The public interface (check_code_validity) stays the same.
 """
 
@@ -23,6 +26,16 @@ _PROBLEM_EM_CODES = frozenset({
 
 # ICD-10 prefixes that signal a well/preventive-visit context
 _PREVENTIVE_DX_PREFIXES = ("Z00",)
+
+# Procedure codes commonly repeated same-day where a repeat-procedure modifier
+# (76/77) is expected if billed more than once (e.g. a second injection or a
+# second arthrocentesis, not a duplicate-billing error).
+_REPEATABLE_PROCEDURE_CODES = frozenset({"20610", "96372"})
+
+# Procedure codes with a CMS bilateral surgery indicator of 1 (bilateral-
+# eligible) where billing 2 units without modifier 50 (or both RT and LT) is
+# a common, avoidable denial trigger.
+_BILATERAL_ELIGIBLE_CODES = frozenset({"69210", "64483"})
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +68,7 @@ def _load_dx_procedure_rules() -> list[dict]:
             "citation_source": "ICD-10-CM",
             "citation_doc_id": "ICD10_Z00_PREVENTIVE_CONTEXT_SAMPLE",
             "citation_section": "ICD-10-CM Official Guidelines for Coding and Reporting, Section I.C.21.c — Factors Influencing Health Status (Z Codes)",
-            "citation_edition": "ICD-10-CM FY2026 (sample reference)",
+            "citation_edition": "ICD-10-CM Official Guidelines FY2026 (curated interpretive rule — not file-backed)",
             "citation_effective_date": "2025-10-01",
             "citation_excerpt": (
                 "Z00.00: Encounter for general adult medical examination without abnormal findings. "
@@ -95,7 +108,7 @@ def _load_modifier_rules() -> list[dict]:
             "citation_source": "NCCI Policy Manual",
             "citation_doc_id": "NCCI_MODIFIER_25_SAMPLE",
             "citation_section": "Chapter 1, Section D — Modifiers",
-            "citation_edition": "NCCI Policy Manual for Medicare Services, effective January 2024 (sample reference)",
+            "citation_edition": "NCCI Policy Manual for Medicare Services, Chapter 1 (curated interpretive rule — not file-backed)",
             "citation_effective_date": "2024-01-01",
             "citation_excerpt": (
                 "Modifier 25 should be appended to an E/M service code to indicate that on the day "
@@ -103,6 +116,72 @@ def _load_modifier_rules() -> list[dict]:
                 "identifiable E/M service above and beyond the usual pre- and post-operative care. "
                 "The E/M service must be documented separately and must meet the criteria for the "
                 "level of service billed."
+            ),
+        },
+    ]
+
+
+def _load_repeat_modifier_rules() -> list[dict]:
+    """Modifier 76/77 — repeat procedure or service by the same/another physician."""
+    return [
+        {
+            "rule_id": "missing_modifier_76",
+            "description": (
+                "A repeatable procedure billed with more than one unit on the same "
+                "date of service requires modifier 76 (repeat procedure by same "
+                "physician) or 77 (by another physician) to distinguish a "
+                "clinically separate repeat from duplicate billing."
+            ),
+            "required_modifiers": {"76", "77"},
+            "trigger_cpt_codes": list(_REPEATABLE_PROCEDURE_CODES),
+            "severity": "MEDIUM",
+            "recommendation": (
+                "Add modifier 76 or 77 if the procedure was clinically repeated on "
+                "the same date, or correct the unit count if this is a single "
+                "occurrence billed in error."
+            ),
+            "confidence": 0.65,
+            "citation_source": "NCCI Policy Manual",
+            "citation_doc_id": "NCCI_MODIFIER_76_SAMPLE",
+            "citation_section": "Chapter 1, Section D — Modifiers",
+            "citation_edition": "NCCI Policy Manual for Medicare Services, Chapter 1 (curated interpretive rule — not file-backed)",
+            "citation_effective_date": "2024-01-01",
+            "citation_excerpt": (
+                "Modifier 76 indicates a repeat procedure or service by the same physician on the "
+                "same day. Without a repeat-procedure modifier, multiple units of the same procedure "
+                "code on a single date of service may be denied as a duplicate claim."
+            ),
+        },
+    ]
+
+
+def _load_bilateral_modifier_rules() -> list[dict]:
+    """Modifier 50 — bilateral procedure, or the RT/LT modifier pair as an alternative."""
+    return [
+        {
+            "rule_id": "missing_modifier_50",
+            "description": (
+                "A bilateral-eligible procedure billed with 2 units requires "
+                "modifier 50 (bilateral procedure), or the RT and LT modifiers "
+                "together, to indicate the procedure was performed on both sides."
+            ),
+            "required_modifiers": {"50"},
+            "trigger_cpt_codes": list(_BILATERAL_ELIGIBLE_CODES),
+            "severity": "MEDIUM",
+            "recommendation": (
+                "Add modifier 50 (or both RT and LT) if the procedure was performed "
+                "bilaterally, or correct the unit count if it was performed on one side only."
+            ),
+            "confidence": 0.65,
+            "citation_source": "NCCI Policy Manual",
+            "citation_doc_id": "NCCI_MODIFIER_50_SAMPLE",
+            "citation_section": "Chapter 1, Section D — Modifiers",
+            "citation_edition": "NCCI Policy Manual for Medicare Services, Chapter 1 (curated interpretive rule — not file-backed)",
+            "citation_effective_date": "2024-01-01",
+            "citation_excerpt": (
+                "Modifier 50 indicates a bilateral procedure performed during the same operative "
+                "session. Procedures billed with 2 units but no bilateral or RT/LT modifier pair "
+                "may be denied or down-coded as a duplicate of the same-side procedure."
             ),
         },
     ]
@@ -132,6 +211,56 @@ def _citation_from_rule(rule: dict) -> Citation:
     )
 
 
+def _check_repeat_modifier(claim: ClaimIn) -> list[Finding]:
+    findings = []
+    code_set = set(claim.cpt_codes)
+    for rule in _load_repeat_modifier_rules():
+        for cpt in code_set & set(rule["trigger_cpt_codes"]):
+            units = claim.units.get(cpt, 1)
+            if units <= 1:
+                continue
+            if set(rule["required_modifiers"]) & set(claim.modifiers):
+                continue
+            findings.append(Finding(
+                rule=rule["rule_id"],
+                severity=rule["severity"],
+                issue=(
+                    f"Possible missing modifier 76/77: {cpt} billed with {units} units "
+                    f"and no repeat-procedure modifier"
+                ),
+                recommendation=rule["recommendation"],
+                citation=_citation_from_rule(rule),
+                confidence=rule["confidence"],
+            ))
+    return findings
+
+
+def _check_bilateral_modifier(claim: ClaimIn) -> list[Finding]:
+    findings = []
+    code_set = set(claim.cpt_codes)
+    for rule in _load_bilateral_modifier_rules():
+        for cpt in code_set & set(rule["trigger_cpt_codes"]):
+            units = claim.units.get(cpt, 1)
+            if units < 2:
+                continue
+            has_50 = "50" in claim.modifiers
+            has_rt_lt = "RT" in claim.modifiers and "LT" in claim.modifiers
+            if has_50 or has_rt_lt:
+                continue
+            findings.append(Finding(
+                rule=rule["rule_id"],
+                severity=rule["severity"],
+                issue=(
+                    f"Possible missing modifier 50: {cpt} billed with {units} units "
+                    f"and no bilateral or RT/LT modifier"
+                ),
+                recommendation=rule["recommendation"],
+                citation=_citation_from_rule(rule),
+                confidence=rule["confidence"],
+            ))
+    return findings
+
+
 # ---------------------------------------------------------------------------
 # Public interface
 # ---------------------------------------------------------------------------
@@ -140,8 +269,10 @@ def check_code_validity(claim: ClaimIn) -> list[Finding]:
     """
     Return Findings for:
       1. Diagnosis-to-procedure conflicts (dx does not support the billed E/M).
-      2. Missing modifier situations (problem E/M in preventive-visit context
-         without modifier 25).
+      2. Missing modifier situations:
+         - modifier 25 (problem E/M in preventive-visit context)
+         - modifier 76/77 (repeatable procedure billed >1 unit, no repeat modifier)
+         - modifier 50 (bilateral-eligible procedure billed 2 units, no bilateral/RT+LT)
     """
     findings = []
     code_set = set(claim.cpt_codes)
@@ -184,5 +315,8 @@ def check_code_validity(claim: ClaimIn) -> list[Finding]:
                 citation=_citation_from_rule(rule),
                 confidence=rule["confidence"],
             ))
+
+    findings.extend(_check_repeat_modifier(claim))
+    findings.extend(_check_bilateral_modifier(claim))
 
     return findings

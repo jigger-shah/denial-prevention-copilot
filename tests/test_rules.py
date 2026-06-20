@@ -421,6 +421,71 @@ def test_code_validity_missing_modifier_25_returns_medium():
 
 
 # ---------------------------------------------------------------------------
+# code_validity — TD-06: modifier 76/77 (repeat procedure) and 50 (bilateral)
+# ---------------------------------------------------------------------------
+
+def test_repeat_procedure_two_units_no_modifier_returns_medium():
+    claim = _claim(cpt_codes=["96372"], icd10_codes=["I10"], modifiers=[], units={"96372": 2})
+    findings = check_code_validity(claim)
+    assert any(f.rule == "missing_modifier_76" and f.severity == "MEDIUM" for f in findings)
+
+
+def test_repeat_procedure_with_modifier_76_no_finding():
+    claim = _claim(cpt_codes=["96372"], icd10_codes=["I10"], modifiers=["76"], units={"96372": 2})
+    findings = check_code_validity(claim)
+    assert not any(f.rule == "missing_modifier_76" for f in findings)
+
+
+def test_repeat_procedure_with_modifier_77_no_finding():
+    claim = _claim(cpt_codes=["96372"], icd10_codes=["I10"], modifiers=["77"], units={"96372": 2})
+    findings = check_code_validity(claim)
+    assert not any(f.rule == "missing_modifier_76" for f in findings)
+
+
+def test_repeat_procedure_single_unit_no_finding():
+    claim = _claim(cpt_codes=["96372"], icd10_codes=["I10"], modifiers=[], units={"96372": 1})
+    findings = check_code_validity(claim)
+    assert not any(f.rule == "missing_modifier_76" for f in findings)
+
+
+def test_non_repeatable_code_two_units_no_finding():
+    claim = _claim(cpt_codes=["99214"], icd10_codes=["I10"], modifiers=[], units={"99214": 2})
+    findings = check_code_validity(claim)
+    assert not any(f.rule == "missing_modifier_76" for f in findings)
+
+
+def test_bilateral_procedure_two_units_no_modifier_returns_medium():
+    claim = _claim(cpt_codes=["69210"], icd10_codes=["I10"], modifiers=[], units={"69210": 2})
+    findings = check_code_validity(claim)
+    assert any(f.rule == "missing_modifier_50" and f.severity == "MEDIUM" for f in findings)
+
+
+def test_bilateral_procedure_with_modifier_50_no_finding():
+    claim = _claim(cpt_codes=["69210"], icd10_codes=["I10"], modifiers=["50"], units={"69210": 2})
+    findings = check_code_validity(claim)
+    assert not any(f.rule == "missing_modifier_50" for f in findings)
+
+
+def test_bilateral_procedure_with_rt_lt_pair_no_finding():
+    claim = _claim(cpt_codes=["69210"], icd10_codes=["I10"], modifiers=["RT", "LT"], units={"69210": 2})
+    findings = check_code_validity(claim)
+    assert not any(f.rule == "missing_modifier_50" for f in findings)
+
+
+def test_bilateral_procedure_with_only_rt_returns_medium():
+    """RT alone (no matching LT) does not satisfy the bilateral-pair exception."""
+    claim = _claim(cpt_codes=["69210"], icd10_codes=["I10"], modifiers=["RT"], units={"69210": 2})
+    findings = check_code_validity(claim)
+    assert any(f.rule == "missing_modifier_50" for f in findings)
+
+
+def test_bilateral_procedure_single_unit_no_finding():
+    claim = _claim(cpt_codes=["69210"], icd10_codes=["I10"], modifiers=[], units={"69210": 1})
+    findings = check_code_validity(claim)
+    assert not any(f.rule == "missing_modifier_50" for f in findings)
+
+
+# ---------------------------------------------------------------------------
 # NPI — luhn_valid() unit tests
 # ---------------------------------------------------------------------------
 

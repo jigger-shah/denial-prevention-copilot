@@ -314,8 +314,8 @@ def test_escalation_required_when_coding_finding_has_low_confidence(mock_validat
 def test_coverage_agent_called_before_coding_agent_sequentially(mock_validate_coverage, mock_validate_coding):
     """No parallel execution: both agents are called, coverage first (per orchestrator source order)."""
     call_order = []
-    mock_validate_coverage.side_effect = lambda claim: call_order.append("coverage") or []
-    mock_validate_coding.side_effect = lambda claim: call_order.append("coding") or []
+    mock_validate_coverage.side_effect = lambda claim, rule_findings=None: call_order.append("coverage") or []
+    mock_validate_coding.side_effect = lambda claim, rule_findings=None: call_order.append("coding") or []
 
     run_review(_claim(cpt_codes=["99213"], icd10_codes=["I10"]))
 
