@@ -25,31 +25,31 @@ Public users cloning this repository should not need an `ANTHROPIC_API_KEY` to s
 
 #### 1. Deterministic-only scenario (clean claim)
 
-- **Claim:** Sample Claim mode → `CLM-003` (CPT 99213 + 80053 + 80048, ICD-10 I10, Medicare)
+- **Claim:** Pick a demo scenario → `CLM-003` (CPT 99213 + 80053 + 80048, ICD-10 I10, Medicare)
 - Click "Review Claim (rule layer only)"
 - **Expected:** NCCI bundling finding (80048 bundled into 80053) — no API call made, no AI section shown beyond the "⚠ AI Agents Disabled" notice.
 
 #### 2. Invalid NPI scenario (short-circuit)
 
-- **Mode:** Manual Claim Entry → enter NPI `1234567890` (fails the Luhn check digit), any CPT/ICD-10 pair
+- **Mode:** Enter manually → enter NPI `1234567890` (fails the Luhn check digit), any CPT/ICD-10 pair
 - Click "Review Claim"
 - **Expected:** A single HIGH `npi_invalid` finding. "⚡ NPI short-circuit" notice appears; `checks_run` narrows to the NPI check only — NCCI, MUE, and code validity never run, by design (see `agents/orchestrator.py:_rule_layer_short_circuited`).
 
 #### 3. NCCI / MUE / modifier scenario
 
-- **Claim:** Sample Claim mode → `CLM-001` (PRD worked example)
+- **Claim:** Pick a demo scenario → `CLM-001` (PRD worked example)
 - Click "Review Claim (rule layer only)"
 - **Expected:** Three rule findings — NCCI PTP bundling (80048/80053, HIGH), Z00.00 diagnosis-procedure conflict (HIGH), missing modifier 25 (MEDIUM). See Step 2 below for the full walkthrough.
 
 #### 4. ICD-10 invalid / unspecified scenario
 
-- **Claim:** Sample Claim mode → `CLM-002` (CPT 99213 + 85025, ICD-10 J06.9)
+- **Claim:** Pick a demo scenario → `CLM-002` (CPT 99213 + 85025, ICD-10 J06.9)
 - Click "Review Claim (rule layer only)"
 - **Expected:** MEDIUM finding — J06.9 (acute upper respiratory infection, unspecified) flagged as an unspecified diagnosis against the real CMS ICD-10-CM order file (`rules/icd10.py`).
 
 #### 5. Optional: AI-enabled scenario — *requires your own `ANTHROPIC_API_KEY`*
 
-- Add your key to `.env` (see README "AI features"), restart the app — sidebar switches to "✅ AI enabled"
+- Add your key to `.env` (see README "AI features"), restart the app — header AI status pill switches to "● AI: Enabled"
 - Run "Run Full Review" on any sample claim to see live Coverage and Coding agent findings with real-time citations.
 
 #### Pre-generated AI demo artifacts (no key needed)
@@ -96,7 +96,7 @@ These cached findings are never shown once a real `ANTHROPIC_API_KEY` is present
 >
 > The third is MEDIUM: there may be a missing modifier 25 situation.
 >
-> The billing specialist — in this case, me — enters their name in the sidebar. They can accept each finding or override it with a documented reason. Once a decision is made, they save it to the audit trail.
+> The billing specialist — in this case, me — enters their name in the header. They can accept each finding or override it with a documented reason. Once a decision is made, they save it to the audit trail.
 >
 > [Accept finding 1. Save. Switch to Audit Trail tab.]
 >
@@ -110,17 +110,17 @@ These cached findings are never shown once a real `ANTHROPIC_API_KEY` is present
 
 ### Setup (before demo — 30 seconds)
 - Streamlit running at localhost:8501
-- Reviewer name entered in sidebar: "Dr. Jane Smith" (or your name)
-- CLM-001 selected in the Sample Claim dropdown (default mode)
+- Reviewer name entered in the header field: "Dr. Jane Smith" (or your name)
+- CLM-001 selected via the demo scenario dropdown (default mode: "Pick a demo scenario")
 - Audit Trail tab cleared of previous sessions if needed
 
-### Optional: Manual Claim Entry Path (insert after Step 1 or demo separately)
+### Optional: Enter Manually Path (insert after Step 1 or demo separately)
 
 > "I want to show you something more realistic — entering a claim directly the way a billing specialist would.
 >
-> [Click 'Manual Claim Entry' mode selector]
+> [Click 'Enter manually']
 >
-> [Click 'Load Worked Example']
+> [Click 'Start from a template']
 >
 > This is the same claim as CLM-001 but entered manually: Medicare, three service lines — 99214 with Z00.00, 80053 with Z00.00, 80048 with Z00.00. A specialist would build this from the encounter.
 >
@@ -128,7 +128,7 @@ These cached findings are never shown once a real `ANTHROPIC_API_KEY` is present
 >
 > Same three findings in under a second. The manual entry path goes through exactly the same rule engine. The system normalizes codes — it will uppercase and strip whitespace before evaluation, so transcription formatting doesn't create false negatives. And it deduplicates across service lines, so if the same diagnosis appears on four lines, it counts once.
 >
-> The audit trail, the citation view, the accept/override workflow — all of it is identical to the sample claim path."
+> The audit trail, the citation view, the accept/override workflow — all of it is identical to the demo scenario path."
 
 ---
 
@@ -196,7 +196,7 @@ These cached findings are never shown once a real `ANTHROPIC_API_KEY` is present
 
 **If no AI key available:**
 
-> "Without an API key, the AI section shows 'AI Coverage Analysis disabled' in the sidebar — the rest of the app runs exactly the same. The architecture is designed so AI is additive: the rule layer provides the deterministic foundation, and the AI layer adds coverage reasoning where the policies are nuanced. Removing the AI key degrades to a rules-only mode, not a broken state."
+> "Without an API key, the header shows '● AI: Disabled' and the AI section shows '⚠ AI Agents Disabled' in-page — the rest of the app runs exactly the same. The architecture is designed so AI is additive: the rule layer provides the deterministic foundation, and the AI layer adds coverage reasoning where the policies are nuanced. Removing the AI key degrades to a rules-only mode, not a broken state."
 
 **Live validation results (2026-06-18):**
 
@@ -215,7 +215,7 @@ These cached findings are never shown once a real `ANTHROPIC_API_KEY` is present
 
 ### Step 2.5 Extended: Coverage Policy Demo Scenarios
 
-The coverage policy corpus (Sprint 10) supports 6 specific manual-claim demo scenarios. Use these in Manual Claim Entry mode to show targeted coverage concerns.
+The coverage policy corpus (Sprint 10) supports 6 specific manual-claim demo scenarios. Use these under "Enter manually" to show targeted coverage concerns.
 
 #### Demo Scenario 1: Labs with Well-Visit Diagnosis Only (concern expected)
 
@@ -271,7 +271,7 @@ The coverage policy corpus (Sprint 10) supports 6 specific manual-claim demo sce
 
 ### Step 3: Human Decision Workflow (60 seconds)
 
-> "Every decision is made by a named specialist. My name is in the sidebar.
+> "Every decision is made by a named specialist. My name is in the header.
 >
 > [Click Accept on Finding 1]
 >
@@ -304,9 +304,9 @@ The coverage policy corpus (Sprint 10) supports 6 specific manual-claim demo sce
 >
 > The table is filterable by claim ID or reviewer name. You can imagine a compliance lead filtering to see every override in the last 30 days, or a manager reviewing all decisions by a specific coder.
 >
-> [Click Export to CSV]
+> [Hover the table and click its download icon]
 >
-> The audit log exports to CSV. The 18-column structure matches what a compliance export would need: it's not a log file — it's a structured decision record.
+> The audit log exports to CSV directly from the table — no separate export button needed. The column structure matches what a compliance export would need: it's not a log file — it's a structured decision record.
 >
 > Two things the database never does: UPDATE and DELETE. Every row is an INSERT. The architecture treats the audit trail as an append-only ledger."
 

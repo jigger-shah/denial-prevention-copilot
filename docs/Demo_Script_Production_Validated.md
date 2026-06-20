@@ -1,4 +1,15 @@
 # Demo Script — Production Validated
+
+> ## ⚠️ STATUS: SUPERSEDED
+>
+> This document reflects an earlier validation snapshot (Sprint 10, 2026-06-16) — predating the orchestrator, the Coding Validation Agent, the golden-set evaluation framework, and every v1.4–v1.8b release. UI references below ("claim intake form," "Click Analyze Claim") describe a layout that no longer exists.
+>
+> **For current demo instructions, use `docs/Demo_Script.md`.**
+>
+> The historical content below is retained as-is for reference and is not maintained.
+
+---
+
 **DenialPreventionCopilot** | Portfolio and Stakeholder Demonstrations  
 Production validated: 2026-06-16 | Model: claude-sonnet-4-5-20250929
 

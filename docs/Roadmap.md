@@ -596,6 +596,68 @@ TD-22, TD-23, TD-25, Documentation Review Agent, LLM Denial Prevention Summary A
 
 ---
 
+## Phase 8.8 — UI Polish & First-Time User Experience (v1.8a) ✅ Complete
+
+**Tests:** 482 tests, all passing (+1 over the pre-sprint 481)
+
+### Objectives
+Improve first-impression quality for public reviewers, technical stakeholders, open-source visitors, and portfolio reviewers — without building new backend product functionality, touching agent prompts, or expanding scope into deployment.
+
+### Deliverables
+- Sidebar removed entirely; replaced with a header bar containing the reviewer name field and two status pills.
+- **AI status pill** ("● AI: Enabled" / "● AI: Disabled") and **Data Source Status pill** ("Data: Live CMS" / "Data: Synthetic fallback" / "Data: Mixed") — the latter surfaces TD-27's backend status check (`rules/data_source_status.py`, v1.7) in the UI for the first time, closing the UI half of TD-27. Clicking the pill opens a popover with per-dataset (NCCI/MUE/ICD-10) status, version, and effective date. Cached at process lifetime (`st.cache_resource`), not a short TTL, since a cold real-data parse can be slow.
+- Claim entry consolidated: the old "Sample Claim" / "Manual Claim Entry" tab split replaced with one "Claim Details" flow — a "Pick a demo scenario" / "Enter manually" radio, with a landing state and three recommended demo shortcuts shown only in demo mode.
+- Demo scenarios tagged by type ("Rule Engine Demo" / "AI Demo" / "Rule + AI Demo") via an additive `demo_type` field in `data/synthetic/sample_claims.json`.
+- "❔ Getting Started" onboarding dialog: how-it-works, architecture diagram, AI/demo-mode legend, confidence legend, limitations/disclaimers, About This Project, and full release history (v1.0–current).
+- Finding cards gained a source badge (Rule Engine / Coverage Agent / Coding Agent, derived from the existing `Finding.rule` field — no schema change) and a plain-English "why this matters" line per rule type.
+- Risk banner gained a severity-count "Why" breakdown and a "Recommended Action" line.
+- Audit Trail's redundant "Export to CSV" button removed (the dataframe's native per-table download already covers it).
+- Manual-entry Payer field defaults to Medicare (others still selectable) with a caption noting payer doesn't currently affect rule-layer findings or retrieval; Clinical Notes field kept visible (not collapsed) per explicit product decision.
+- Two real bugs found and fixed during the polish pass: (1) "Clear Form" cleared `session_state` correctly but the browser kept showing stale field values — a Streamlit frontend quirk with deleted-but-not-replaced widget keys, fixed via versioned widget keys (`manual_claim_id_v{N}`, `sl_{N}_{row}_{field}`) that increment on every clear/template-load; (2) "Add Service Line" and the row "✕" remove button required two clicks to take visible effect, because neither called `st.rerun()` after mutating `session_state` — both now update on a single click.
+- TD-25 re-investigated: considered widening `dx_procedure_conflict` to prefix-match the full Z00 family (matching `missing_modifier_25`'s existing behavior), but this regressed two calibrated golden-set tests (GOLD-005/GOLD-013 deliberately expect Z00.01 to raise only `missing_modifier_25`). Reverted; TD-25 remains deferred, now with a code comment and regression test documenting why.
+
+### Out of scope (deferred, not part of this phase)
+TD-22 (deferred to Phase 8.9/v1.8b), TD-23, deployment, Streamlit Cloud, public repo switch, new AI agents, backend quality hardening, prompt tuning, golden-set expansion.
+
+### Dependencies
+- Phase 8.7 complete
+
+### Success Criteria
+- Full suite passes (482/482) ✅
+- Sidebar fully removed, replaced with header bar ✅
+- TD-27 UI half resolved (data-source pill) ✅
+- First-time-user onboarding (Getting Started dialog) shipped ✅
+- No backend/agent logic changed (only the bounded, reverted TD-25 investigation) ✅
+
+---
+
+## Phase 8.9 — Citation Transparency (v1.8b) ✅ Complete
+
+**Tests:** 488 tests, all passing (+6 over the pre-sprint 482)
+
+### Objectives
+Close TD-22 (retrieved policy transparency limited to one displayed citation) without changing governance rules, citation grounding, or `RiskAssessment`'s schema.
+
+### Deliverables
+- `agents/coverage_validation.py:validate_coverage()` and `agents/coding_validation.py:validate_coding()` now return `(findings, retrieved_policies)` instead of just `findings` — `retrieved_policies` is the same up-to-3 policy list each agent already retrieves internally via `_retrieve_policies()`, no longer discarded after the model call, no new retrieval or model call added.
+- `agents/orchestrator.py:run_review()` returns `(RiskAssessment, retrieved_policies)` as a sibling tuple keyed by agent rule name (`"coverage_validation"`, `"coding_validation"`) — `RiskAssessment`'s own shape, and therefore the audit/DB layer, is unchanged.
+- `app/main.py:_render_supporting_policies()` — a new "📚 Supporting Policies Reviewed (N)" expander on AI-sourced finding cards, listing other retrieved policies (title, section, effective date, excerpt) excluding the one already cited, explicitly captioned as "considered during AI analysis but not the basis for this finding" so it's never mistaken for additional evidence.
+- All call sites updated: both full-review paths in `app/main.py`, the standalone "Run AI Coverage Analysis" button, `evaluation/harness.py` (including a real bug caught and fixed — the offline-mode mock returned a bare `[]`, which would have broken on the new tuple-unpacking), and `agents/run_logger.py`'s docstring example.
+- 6 new tests across `tests/test_coverage_validation.py`, `tests/test_coding_validation.py`, and `tests/test_orchestrator.py` asserting the new return shape and content.
+
+### Out of scope (deferred, not part of this phase)
+TD-23 (dedup/root-cause grouping across agents) remains fully deferred — not attempted even in a small form.
+
+### Dependencies
+- Phase 8.8 complete
+
+### Success Criteria
+- Full suite passes (488/488) ✅
+- TD-22 resolved ✅
+- No change to citation grounding, governance rules, or `RiskAssessment`'s schema ✅
+
+---
+
 ## Phase 9 — Portfolio Publication
 
 **Status:** Future  
@@ -668,5 +730,7 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 | 8.5 — ICD-10 Expansion (v1.5) | ✅ Complete | Real CMS ICD-10-CM dataset; icd10_invalid/icd10_unspecified rules; 404 tests | P0 |
 | 8.6 — Public Release Hardening (v1.6) | ✅ Complete | No-key safe mode, cached AI demo artifacts, repo hygiene, structured logging; 426 tests | Portfolio |
 | 8.7 — Quality Hardening Sprint (v1.7) | ✅ Complete | HCPCS + modifier rules, citation excerpt persistence, real-data status check, TD-24 Phases 1-3B (prompt calibration), Haiku/Sonnet/Opus comparison → default model now Sonnet 4.6; 481 tests | P1 |
+| 8.8 — UI Polish & First-Time UX (v1.8a) | ✅ Complete | Sidebar removed, header bar (AI + Data Source status pills), claim-entry consolidation, Getting Started onboarding, source badges, risk visualization, Clear Form + Add/Remove Service Line bug fixes; 482 tests | Portfolio |
+| 8.9 — Citation Transparency (v1.8b) | ✅ Complete | TD-22 resolved: Supporting Policies Reviewed UI + retrieved_policies plumbing through both agents and the orchestrator; 488 tests | P1 |
 | 9 — Portfolio Publication | 🔜 | Repo set to public, optional CI | Portfolio |
 | 10 — Streamlit Cloud | 🔜 | Live public URL | Portfolio |

@@ -1209,6 +1209,9 @@ def _getting_started_dialog() -> None:
 
     with st.expander("What Changed (Release Notes)"):
         st.markdown(
+            "- **v1.8b** — Citation transparency: AI-sourced finding cards now show "
+            "a \"Supporting Policies Reviewed\" section listing other policies the "
+            "agent retrieved and considered but didn't cite — closes TD-22.\n"
             "- **v1.8a** — UI polish and first-time user experience: removed the "
             "sidebar in favor of a header bar with reviewer/AI/data-source status, "
             "consolidated demo and manual claim entry into one flow, added the "

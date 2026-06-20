@@ -8,7 +8,7 @@ Built on free public data: NPPES NPI Registry, CMS Coverage API (NCDs/LCDs), NCC
 
 > **Not for clinical or billing use.** This is a synthetic-data prototype demonstrating an architecture pattern, not production healthcare software. It is not HIPAA certified and has not been validated against real claims, real payer adjudication, or real patient data. Do not use it to make actual coverage, coding, or billing decisions.
 
-**Status:** v1.7 (Quality Hardening Sprint) complete — 481 tests passing. Default AI model: Claude Sonnet 4.6 (override with `ANTHROPIC_MODEL`). See `docs/Technical_Debt_Register.md` for the full TD-24 calibration history and the Haiku/Sonnet/Opus model comparison behind that choice.
+**Status:** v1.8b (Citation & Transparency) complete — 488 tests passing. v1.8a added the current header-based UI (reviewer name, AI status, data-source status, Getting Started onboarding); v1.8b closed TD-22, surfacing every policy an AI agent considered, not just the one it cited. Default AI model: Claude Sonnet 4.6 (override with `ANTHROPIC_MODEL`). See `docs/Technical_Debt_Register.md` for the full TD-24 calibration history and the Haiku/Sonnet/Opus model comparison behind that choice.
 
 ## Setup
 
@@ -31,7 +31,7 @@ The app runs fully on a fresh clone with no `ANTHROPIC_API_KEY` — no setup bey
 
 The Coverage Validation and Coding Validation agents call the Anthropic API and need your own `ANTHROPIC_API_KEY`. Without a key:
 
-- The sidebar and in-page AI sections show **"⚠ AI Agents Disabled"** — the app never attempts an Anthropic call and never constructs an Anthropic client.
+- The header status pill shows **"● AI: Disabled"**, and the in-page AI sections show **"⚠ AI Agents Disabled"** — the app never attempts an Anthropic call and never constructs an Anthropic client.
 - The deterministic rule-engine review (NCCI, MUE, NPI, code validity) remains fully available.
 - Three designated sample claims display **pre-generated, clearly labeled** ("📋 Pre-generated demonstration results") AI findings captured from a real run, so you can preview representative agent output without making a live API call. See `docs/Demo_Script.md`.
 
@@ -42,7 +42,19 @@ cp .env.example .env
 # edit .env and set ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Once set, the sidebar shows **"✅ AI enabled"** and both agents run as part of "Run Full Review."
+Once set, the header status pill shows **"● AI: Enabled"** and both agents run as part of "Run Full Review."
+
+## UI overview (v1.8a/v1.8b)
+
+The app has no sidebar — the reviewer name field and two status pills live in a header bar at the top of the page:
+
+- **AI status pill** — "● AI: Enabled" / "● AI: Disabled", reflecting whether `ANTHROPIC_API_KEY` is set.
+- **Data Source Status pill** — "Data: Live CMS" / "Data: Synthetic fallback" / "Data: Mixed", reflecting whether `rules/data_source_status.py` found the real NCCI/MUE/ICD-10 reference files locally or is serving the small synthetic fallback tables (see TD-27 in `docs/Technical_Debt_Register.md`).
+- **❔ Getting Started** — an onboarding dialog covering how the system works, AI/demo-mode states, the confidence legend, limitations, and full version history.
+
+Claim entry is a single "Claim Details" flow: pick "Pick a demo scenario" or "Enter manually" — there's no separate Sample Claim/Manual Claim Entry tab split.
+
+AI-sourced finding cards include a **"Supporting Policies Reviewed"** section listing other LCD/NCD policies the agent retrieved and considered but didn't cite as the basis for the finding (TD-22) — separate from the primary citation, so it's never read as additional evidence.
 
 ## Test
 
@@ -59,7 +71,16 @@ python -m evaluation.run_evaluation          # offline — no Anthropic calls, r
 python -m evaluation.run_evaluation --live    # real Coverage/Coding Agent calls (default model: claude-sonnet-4-6, override with ANTHROPIC_MODEL)
 ```
 
-Saves `latest_report.md`, `latest_results.json`, and `latest_summary.json` to `evaluation/`. Current live benchmark (15-claim golden set, Phase 3B prompt calibration): Overall 0.92 precision / 0.85 recall / 0.88 F1. See `docs/Roadmap.md` Phase 8 and `docs/Technical_Debt_Register.md` TD-09/TD-24 for full results, the Haiku/Sonnet/Opus model comparison behind the default-model choice, and known gaps (15-claim set is still too small to be statistically significant).
+Saves `latest_report.md`, `latest_results.json`, and `latest_summary.json` to `evaluation/`. Current live benchmark (15-claim golden set, Phase 3B prompt calibration):
+
+| Category | Precision | Recall | F1 |
+|---|---|---|---|
+| Overall | 0.92 | 0.85 | 0.88 |
+| Rule Engine | 1.00 | 1.00 | 1.00 |
+| Coverage Agent | 1.00 | 0.50 | 0.67 |
+| Coding Agent | 0.60 | 0.60 | 0.60 |
+
+See `docs/Roadmap.md` Phase 8 and `docs/Technical_Debt_Register.md` TD-09/TD-24 for full results, the Haiku/Sonnet/Opus model comparison behind the default-model choice, and known gaps (15-claim set is still too small to be statistically significant; TD-24 remains partially resolved).
 
 ## Architecture Overview
 
