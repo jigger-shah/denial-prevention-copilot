@@ -46,7 +46,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "claude-haiku-4-5"
+_DEFAULT_MODEL = "claude-sonnet-4-6"
 _LCD_SOURCE_TYPES = {"LCD", "NCD"}
 _MAX_POLICIES = 3
 _EXCERPT_SNIPPET_MAX_CHARS = 400

@@ -20,10 +20,9 @@ Two modes:
 
   live — real agents.coverage_validation.validate_coverage and
     agents.coding_validation.validate_coding calls are made, using whichever
-    model they already default to (claude-haiku-4-5, per CLAUDE.md's "Use
-    Claude Haiku for any optional live evaluation run unless explicitly
-    comparing model quality" — set the ANTHROPIC_MODEL env var to compare
-    other models). Costs real API calls; never used by the automated test
+    model they already default to (claude-sonnet-4-6, per CLAUDE.md — set the
+    ANTHROPIC_MODEL env var to compare other models, e.g. claude-haiku-4-5 or
+    claude-opus-4-8). Costs real API calls; never used by the automated test
     suite.
 """
 

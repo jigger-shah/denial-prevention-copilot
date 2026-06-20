@@ -8,6 +8,8 @@ Built on free public data: NPPES NPI Registry, CMS Coverage API (NCDs/LCDs), NCC
 
 > **Not for clinical or billing use.** This is a synthetic-data prototype demonstrating an architecture pattern, not production healthcare software. It is not HIPAA certified and has not been validated against real claims, real payer adjudication, or real patient data. Do not use it to make actual coverage, coding, or billing decisions.
 
+**Status:** v1.7 (Quality Hardening Sprint) complete — 481 tests passing. Default AI model: Claude Sonnet 4.6 (override with `ANTHROPIC_MODEL`). See `docs/Technical_Debt_Register.md` for the full TD-24 calibration history and the Haiku/Sonnet/Opus model comparison behind that choice.
+
 ## Setup
 
 ```bash
@@ -54,10 +56,10 @@ A golden-set evaluation harness measures finding precision/recall/F1 against a l
 
 ```bash
 python -m evaluation.run_evaluation          # offline — no Anthropic calls, rule layer measured for real
-python -m evaluation.run_evaluation --live    # real Coverage/Coding Agent calls (claude-haiku-4-5)
+python -m evaluation.run_evaluation --live    # real Coverage/Coding Agent calls (default model: claude-sonnet-4-6, override with ANTHROPIC_MODEL)
 ```
 
-Saves `latest_report.md`, `latest_results.json`, and `latest_summary.json` to `evaluation/`. See `docs/Roadmap.md` Phase 8 and `docs/Technical_Debt_Register.md` TD-09/TD-24 for current results and known gaps (agent-layer precision needs calibration before citing live numbers).
+Saves `latest_report.md`, `latest_results.json`, and `latest_summary.json` to `evaluation/`. Current live benchmark (15-claim golden set, Phase 3B prompt calibration): Overall 0.92 precision / 0.85 recall / 0.88 F1. See `docs/Roadmap.md` Phase 8 and `docs/Technical_Debt_Register.md` TD-09/TD-24 for full results, the Haiku/Sonnet/Opus model comparison behind the default-model choice, and known gaps (15-claim set is still too small to be statistically significant).
 
 ## Architecture Overview
 

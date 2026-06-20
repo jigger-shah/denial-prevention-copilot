@@ -489,7 +489,7 @@ Built as a standalone `evaluation/` module + CLI rather than a `pytest -m golden
 
 ### Results
 - Offline (default, no API calls): Rule Engine 1.00 precision / 1.00 recall / 1.00 F1. Coverage/Coding Agent categories show 0.00 by design (mocked off) — not a quality measurement.
-- Live (real `claude-haiku-4-5` calls): Rule Engine still 1.00/1.00/1.00; Coverage Agent 0.30 precision / 1.00 recall; Coding Agent 0.25 precision / 1.00 recall — both agents catch every labeled positive but also flag several claims not labeled as agent-positive. Tracked as `docs/Technical_Debt_Register.md` TD-24 — Phase 1 (golden-set label review) resolved in Phase 8.7 / v1.7; a live re-run to confirm the precision improvement is the recommended next step before publishing live AI accuracy claims.
+- Live (real `claude-haiku-4-5` calls, this v1.4 snapshot only — see Phase 8.7/v1.7 for the current numbers and current default model): Rule Engine still 1.00/1.00/1.00; Coverage Agent 0.30 precision / 1.00 recall; Coding Agent 0.25 precision / 1.00 recall — both agents catch every labeled positive but also flag several claims not labeled as agent-positive. Tracked as `docs/Technical_Debt_Register.md` TD-24, since partially resolved through Phases 1-3B in Phase 8.7/v1.7.
 
 ### Success Criteria
 - Full suite passes (375/375) ✅
@@ -566,30 +566,32 @@ Streamlit Cloud deployment, switching the GitHub repository to public, LinkedIn/
 
 ## Phase 8.7 — Quality Hardening Sprint (v1.7) ✅ Complete
 
-**Tests:** 465 tests, all passing (+39)
+**Tests:** 481 tests, all passing (+55 over the pre-sprint 426)
+
+**Default AI model:** `claude-sonnet-4-6` (was `claude-haiku-4-5`; override with `ANTHROPIC_MODEL` — Haiku and Opus remain fully supported)
 
 ### Objectives
 Close a small, deliberately scoped set of open technical-debt items without growing the agent count, building a full HCPCS reference-file platform, touching UI/UX, or doing any deployment/release work.
 
 ### Deliverables
-- `docs/Technical_Debt_Register.md` TD-24 (Phase 1): reviewed the two live "false positives" from the Phase 8 `--live` run (`GOLD-008`, `GOLD-009`) and judged both plausible-but-unlabeled rather than agent over-flagging; relabeled them in `evaluation/golden_claims.json` and added `GOLD-015` as an explicit agent-negative baseline claim.
+- `docs/Technical_Debt_Register.md` TD-24 — **partially resolved** across four passes: Phase 1 (relabeled the two live "false positives" from the Phase 8 `--live` run, `GOLD-008`/`GOLD-009`, as plausible-but-unlabeled rather than over-flagging, and added `GOLD-015` as an explicit agent-negative baseline); Phase 2 (live re-measurement against the relabeled set, confirming precision improved); Phase 3 (anti-pile-on prompt calibration — overshot, recall dropped); Phase 3B (`rule_findings`-conditional narrowing — recovered recall while keeping precision gains, best F1 of all phases: Overall 0.92/0.85/0.88, Coverage 1.00/0.50/0.67, Coding 0.60/0.60/0.60). A follow-up Haiku-vs-Sonnet-vs-Opus live benchmark on the same Phase 3B prompts found Sonnet 4.6 had the best overall F1 (0.86) and was the only model scoring non-zero on both agents at once — `_DEFAULT_MODEL` was changed to `claude-sonnet-4-6` in both `agents/coverage_validation.py` and `agents/coding_validation.py` on that basis. Remaining gap: residual multi-finding pile-on/drop pattern, and the 15-claim golden set is still too small to be statistically significant (Future Work: expand to 30–50 claims).
 - TD-26: `retrieval/chunking.py:is_low_information_excerpt()` catches grammatically-complete-but-boilerplate citation excerpts (e.g. "Scroll down for links..."); wired into both agents' `_clean_citation_excerpt()`.
 - TD-06 (fully resolved): `rules/hcpcs.py` — a curated ~16-code HCPCS Level II recognition check (format regex + small dict, MEDIUM `hcpcs_unrecognized` finding); two new modifier rules in `rules/code_validity.py` (`missing_modifier_76` repeat-procedure, `missing_modifier_50` bilateral), bringing total active modifier rules to 3 (25, 76/77, 50).
 - TD-15: `code_validity.py`'s citation `edition` strings changed from `"(sample reference)"` to `"(curated interpretive rule — not file-backed)"`, distinguishing permanently-hardcoded rules from genuine missing-CMS-file fallback scenarios.
 - TD-20: `citation_excerpt` column added to `audit_decisions` (backward-compatible migration), threaded through `AuditDecision`, `save_decision()`, and `app/main.py`'s Save Decision handler.
 - TD-27 (backend only): `rules/data_source_status.py` — aggregates the existing NCCI/MUE/ICD-10 loaders' discovery functions into `get_data_source_status()` / `any_synthetic_fallback_active()`. No UI indicator, per scope.
-- New tests: 10 in `tests/test_rules.py`, 12 in `tests/test_hcpcs.py`, 6 in `tests/test_chunking.py`, 5 in `tests/test_data_source_status.py`, 3 in `tests/test_audit.py`, plus updated assertions in `tests/test_coverage_validation.py`/`tests/test_coding_validation.py`.
+- New tests: 10 in `tests/test_rules.py`, 12 in `tests/test_hcpcs.py`, 6 in `tests/test_chunking.py`, 5 in `tests/test_data_source_status.py`, 3 in `tests/test_audit.py`, 14 across `tests/test_coverage_validation.py`/`tests/test_coding_validation.py` (TD-24 Phase 3/3B prompt + rule_findings-threading assertions).
 
 ### Out of scope (deferred, not part of this phase)
-TD-22, TD-23, TD-25, Documentation Review Agent, LLM Denial Prevention Summary Agent, UI redesign/polish, deployment, Streamlit Cloud, public release tasks, a live evaluation re-run, and any agent prompt calibration.
+TD-22, TD-23, TD-25, Documentation Review Agent, LLM Denial Prevention Summary Agent, UI redesign/polish, deployment, Streamlit Cloud, public release tasks, expanding the golden set beyond 15 claims, and any further prompt calibration beyond Phase 3B.
 
 ### Dependencies
 - Phase 8.6 complete
 
 ### Success Criteria
-- Full suite passes (465/465) ✅
-- TD-06, TD-15, TD-20 fully resolved; TD-24 Phase 1 and TD-27 backend resolved ✅
-- No commits or pushes made during the sprint (left for explicit review) ✅
+- Full suite passes (481/481) ✅
+- TD-06, TD-15, TD-20, TD-26 fully resolved; TD-24 (Phases 1/2/3B) and TD-27 backend partially/fully resolved ✅
+- Default live model upgraded to Sonnet 4.6 based on a live Haiku/Sonnet/Opus comparison ✅
 - No UI, launch, or social-media content touched ✅
 
 ---
@@ -665,6 +667,6 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 | 8 — Evaluation Framework (v1.4) | ✅ Complete | Golden set, precision/recall harness; Rule Engine 1.00/1.00/1.00 offline; 375 tests | P0 metric |
 | 8.5 — ICD-10 Expansion (v1.5) | ✅ Complete | Real CMS ICD-10-CM dataset; icd10_invalid/icd10_unspecified rules; 404 tests | P0 |
 | 8.6 — Public Release Hardening (v1.6) | ✅ Complete | No-key safe mode, cached AI demo artifacts, repo hygiene, structured logging; 426 tests | Portfolio |
-| 8.7 — Quality Hardening Sprint (v1.7) | ✅ Complete | HCPCS + modifier rules, citation excerpt persistence, real-data status check, golden-set relabeling; 465 tests | P1 |
+| 8.7 — Quality Hardening Sprint (v1.7) | ✅ Complete | HCPCS + modifier rules, citation excerpt persistence, real-data status check, TD-24 Phases 1-3B (prompt calibration), Haiku/Sonnet/Opus comparison → default model now Sonnet 4.6; 481 tests | P1 |
 | 9 — Portfolio Publication | 🔜 | Repo set to public, optional CI | Portfolio |
 | 10 — Streamlit Cloud | 🔜 | Live public URL | Portfolio |
