@@ -87,6 +87,22 @@ def test_diagnosis_mismatch_raises_high_finding():
     assert dx_findings[0].severity == "HIGH"
 
 
+def test_diagnosis_mismatch_not_raised_for_other_z00_family_code():
+    """Z00.01 (unlike Z00.00) must NOT raise dx_procedure_conflict — TD-25 was
+    considered (widening this to the full Z00 prefix family, matching
+    missing_modifier_25's broader match) but the golden evaluation set
+    (GOLD-005, GOLD-013 in evaluation/golden_claims.json) calibrates Z00.01 to
+    raise missing_modifier_25 only. This is a deliberate distinction in the
+    calibrated dataset, not an inconsistency — TD-25 stays deferred."""
+    claim = load_claim(_make_claim(
+        cpt_codes=["99214"],
+        icd10_codes=["Z00.01"],
+    ))
+    findings = review_claim(claim)
+    assert not any(f.rule == "dx_procedure_conflict" for f in findings)
+    assert any(f.rule == "missing_modifier_25" for f in findings)
+
+
 def test_diagnosis_mismatch_not_raised_for_preventive_code():
     """Z00.00 with a preventive E/M code (99395) should not trigger a conflict."""
     claim = load_claim(_make_claim(

@@ -32,6 +32,7 @@ load_dotenv()
 
 from rules.models import Citation, Finding
 from rules.rule_engine import load_claim, review_claim, overall_risk, CHECKS_RUN
+from rules.data_source_status import get_data_source_status
 from agents.coverage_validation import validate_coverage
 from agents.orchestrator import run_review
 from db.audit_repository import AuditDecision, AuditRepository
@@ -72,8 +73,39 @@ _RISK_CONFIG = {
     "CLEAN": ("🟢 CLEAN — no denial risks identified", "success"),
 }
 
-_SL_COLS = [2.0, 0.9, 0.9, 0.7, 1.3, 1.3, 1.3, 1.3, 0.7]
+_SL_COLS = [1.7, 0.8, 0.8, 0.6, 1.1, 1.1, 1.1, 1.1, 0.5]
 _SL_HEADERS = ["CPT / HCPCS", "Mod 1", "Mod 2", "Units", "ICD-10 (1)", "ICD-10 (2)", "ICD-10 (3)", "ICD-10 (4)", ""]
+
+# Source label shown on each finding card — derived from the existing Finding.rule
+# value, no schema change. Anything not in this map is rule-layer deterministic.
+_AGENT_RULE_LABELS = {
+    "coverage_validation": "Coverage Agent",
+    "coding_validation": "Coding Agent",
+}
+
+# Short, plain-English "why this matters" line per rule — purely a UI lookup over
+# the existing Finding.rule field, not a data-model change.
+_WHY_IT_MATTERS = {
+    "ncci_ptp": "This service combination may be denied because one service is bundled into another.",
+    "mue_unit_limit": "Billed units exceed common Medicare unit limits for this code.",
+    "missing_modifier_25": "This E/M service may need separate-identifiable-service support.",
+    "missing_modifier_76": "A repeated procedure without a repeat-procedure modifier may be denied as a duplicate.",
+    "missing_modifier_50": "A bilateral-eligible procedure without a bilateral modifier may be denied or down-coded.",
+    "dx_procedure_conflict": "The diagnosis billed may not support a problem-oriented visit, which can trigger a denial.",
+    "npi_invalid": "An invalid NPI can cause the claim to be rejected before any other check runs.",
+    "npi_registry": "An NPI that can't be verified against the NPPES registry may delay or block claim processing.",
+    "icd10_invalid": "Invalid diagnosis codes may cause outright claim rejection.",
+    "icd10_unspecified": "Unspecified diagnosis codes may trigger additional payer scrutiny or denial.",
+    "coverage_validation": "Medical necessity support for this service may be missing from the cited policy.",
+    "coding_validation": "The diagnosis/coding rationale may not support the service billed.",
+}
+
+_RECOMMENDED_ACTION = {
+    "HIGH": "Review before submission.",
+    "MEDIUM": "Review recommended before submission.",
+    "LOW": "Low risk — spot-check if time allows.",
+    "CLEAN": "No action needed.",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +172,66 @@ def _severity_badge(severity: str) -> str:
     )
 
 
+def _source_label(finding) -> str:
+    """Rule Engine / Coverage Agent / Coding Agent — derived from Finding.rule."""
+    return _AGENT_RULE_LABELS.get(finding.rule, "Rule Engine")
+
+
+def _why_it_matters(finding) -> str | None:
+    return _WHY_IT_MATTERS.get(finding.rule)
+
+
+def _source_badge(finding) -> str:
+    label = _source_label(finding)
+    bg = "#7c3aed" if label != "Rule Engine" else "#4b5563"
+    return (
+        f'<span style="background:{bg};color:#fff;padding:1px 8px;'
+        f'border-radius:4px;font-size:0.68rem;font-weight:600;'
+        f'margin-left:6px;">{label}</span>'
+    )
+
+
+@st.cache_resource
+def _data_source_summary() -> dict:
+    """Wraps rules.data_source_status.get_data_source_status() with a
+    process-lifetime cache. The underlying loaders parse the full CMS
+    reference files when present locally (can take a while), and that
+    parsed state doesn't change for the life of the running server —
+    a short TTL would force the same slow re-parse every refresh."""
+    status = get_data_source_status()
+    statuses = {v["status"] for v in status.values()}
+    if statuses == {"file_backed"}:
+        overall = "file_backed"
+    elif statuses == {"synthetic_fallback"}:
+        overall = "synthetic_fallback"
+    else:
+        overall = "mixed"
+    return {"overall": overall, "datasets": status}
+
+
+def _risk_why_lines(findings: list) -> list[str]:
+    """Plain-English severity breakdown for the risk banner's 'Why' section."""
+    counts: dict[str, int] = {}
+    for f in findings:
+        counts[f.severity] = counts.get(f.severity, 0) + 1
+    lines = []
+    for sev in ("HIGH", "MEDIUM", "LOW"):
+        if counts.get(sev):
+            label = "Severity finding" if counts[sev] == 1 else "Severity findings"
+            lines.append(f"{counts[sev]} {sev.title()} {label}")
+    return lines
+
+
+def _render_risk_explanation(risk_score: str, findings: list) -> None:
+    """'Why' severity breakdown + 'Recommended Action' shown under the risk banner."""
+    why_lines = _risk_why_lines(findings)
+    if why_lines:
+        st.markdown("**Why:**")
+        for line in why_lines:
+            st.markdown(f"- {line}")
+    st.markdown(f"**Recommended Action:** {_RECOMMENDED_ACTION.get(risk_score, 'Review findings below.')}")
+
+
 def _citation_caption(citation) -> str:
     text = f"{citation.source} — {citation.section}"
     if citation.edition:
@@ -190,6 +282,7 @@ def _finding_card(finding, claim_id: str, reviewer_name: str, repo: AuditReposit
         f'background:{style["card_bg"]};padding:12px 16px;'
         f'border-radius:0 6px 6px 0;margin-bottom:4px;">'
         f'{_severity_badge(finding.severity)}'
+        f'{_source_badge(finding)}'
         f'&nbsp;&nbsp;<strong>{finding.issue}</strong>'
         f'</div>',
         unsafe_allow_html=True,
@@ -199,6 +292,9 @@ def _finding_card(finding, claim_id: str, reviewer_name: str, repo: AuditReposit
         col_detail, col_action = st.columns([3, 1])
 
         with col_detail:
+            why = _why_it_matters(finding)
+            if why:
+                st.caption(f"💡 {why}")
             st.write(f"**Recommendation:** {finding.recommendation}")
             st.caption(
                 f"Citation: {_citation_caption(finding.citation)} &nbsp;|&nbsp; "
@@ -270,7 +366,7 @@ def _save_controls(
         return
 
     if not reviewer_name.strip():
-        st.caption("Enter your name in the sidebar to save.")
+        st.caption("Enter your name in the header above to save.")
         return
 
     if st.button("💾 Save Decision", key=f"save_{fid}", use_container_width=True):
@@ -321,6 +417,7 @@ def _render_full_review_results(risk_assessment, claim_id: str, reviewer_name: s
     """Render a RiskAssessment from agents.orchestrator.run_review() — one consolidated findings list."""
     label, kind = _RISK_CONFIG[risk_assessment.score]
     getattr(st, kind)(label)
+    _render_risk_explanation(risk_assessment.score, risk_assessment.findings)
 
     npi_short_circuited = any(
         f.rule == "npi_invalid" and f.severity == "HIGH" for f in risk_assessment.findings
@@ -421,10 +518,14 @@ def _render_cached_ai_demo(claim_id: str) -> None:
             f'background:{style["card_bg"]};padding:12px 16px;'
             f'border-radius:0 6px 6px 0;margin-bottom:4px;">'
             f'{_severity_badge(finding.severity)}'
+            f'{_source_badge(finding)}'
             f'&nbsp;&nbsp;<strong>{finding.issue}</strong>'
             f'</div>',
             unsafe_allow_html=True,
         )
+        why = _why_it_matters(finding)
+        if why:
+            st.caption(f"💡 {why}")
         st.write(f"**Recommendation:** {finding.recommendation}")
         st.caption(
             f"Citation: {_citation_caption(finding.citation)} &nbsp;|&nbsp; "
@@ -478,50 +579,62 @@ def _render_audit_trail(repo: AuditRepository) -> None:
     display_cols = [c for c in display_cols if c in df.columns]
     st.dataframe(df[display_cols], use_container_width=True)
 
-    csv_str = repo.export_decisions_csv(
-        claim_id=claim_filter.strip() or None,
-        reviewer_name=reviewer_filter.strip() or None,
-    )
-    st.download_button(
-        "📥 Export to CSV",
-        data=csv_str,
-        file_name="audit_decisions.csv",
-        mime="text/csv",
-    )
-
 
 # ---------------------------------------------------------------------------
 # Manual mode callbacks (module-level so Streamlit can serialize them)
 # ---------------------------------------------------------------------------
 
+def _form_version() -> int:
+    return st.session_state.get("manual_form_version", 0)
+
+
+def _mkey(field: str) -> str:
+    """Versioned key for a manual-entry header field widget.
+
+    Deleting a text_input's session_state key does not reliably reset its
+    displayed value in the browser (confirmed: the frontend keeps showing the
+    stale value even though session_state is correctly cleared server-side).
+    Giving the widget a brand-new key — by bumping manual_form_version on
+    Clear Form / Start from a template — forces a fresh widget instance with
+    no stale value, which does reset reliably.
+    """
+    return f"manual_{field}_v{_form_version()}"
+
+
+def _slkey(row_id: int, field: str) -> str:
+    return f"sl_{_form_version()}_{row_id}_{field}"
+
+
 def _on_payer_name_change() -> None:
-    name = st.session_state.get("manual_payer_name", "")
-    st.session_state["manual_payer_id"] = get_payer_id(name)
+    name = st.session_state.get(_mkey("payer_name"), "")
+    st.session_state[_mkey("payer_id")] = get_payer_id(name)
 
 
 def _clear_manual_form() -> None:
+    next_version = _form_version() + 1
     keys_to_clear = [k for k in st.session_state if k.startswith(("manual_", "sl_"))]
     for k in keys_to_clear:
         del st.session_state[k]
+    st.session_state["manual_form_version"] = next_version
     _clear_review_state()
 
 
 def _load_worked_example() -> None:
     _clear_manual_form()
     ex = WORKED_EXAMPLE
-    st.session_state["manual_claim_id"] = ex["claim_id"]
-    st.session_state["manual_payer_name"] = ex["payer_name"]
-    st.session_state["manual_payer_id"] = get_payer_id(ex["payer_name"])
-    st.session_state["manual_specialty"] = ex["provider_specialty"]
-    st.session_state["manual_npi"] = ex["npi"]
-    st.session_state["manual_note_text"] = ex["note_text"]
+    st.session_state[_mkey("claim_id")] = ex["claim_id"]
+    st.session_state[_mkey("payer_name")] = ex["payer_name"]
+    st.session_state[_mkey("payer_id")] = get_payer_id(ex["payer_name"])
+    st.session_state[_mkey("specialty")] = ex["provider_specialty"]
+    st.session_state[_mkey("npi")] = ex["npi"]
+    st.session_state[_mkey("note_text")] = ex["note_text"]
     row_ids = list(range(len(ex["service_lines"])))
     st.session_state["manual_active_rows"] = row_ids
     st.session_state["manual_next_row_id"] = len(ex["service_lines"])
     for row_id, line in zip(row_ids, ex["service_lines"]):
         for field in ("cpt", "mod1", "mod2", "icd10_1", "icd10_2", "icd10_3", "icd10_4"):
-            st.session_state[f"sl_{row_id}_{field}"] = line[field]
-        st.session_state[f"sl_{row_id}_units"] = line.get("units", 1)
+            st.session_state[_slkey(row_id, field)] = line[field]
+        st.session_state[_slkey(row_id, "units")] = line.get("units", 1)
 
 
 def _collect_manual_claim_dict_or_errors() -> tuple[dict | None, list[str]]:
@@ -533,24 +646,24 @@ def _collect_manual_claim_dict_or_errors() -> tuple[dict | None, list[str]]:
     "Review Claim" button so the same validation runs regardless of which is used.
     """
     header = {
-        "claim_id": st.session_state.get("manual_claim_id", "").strip(),
-        "payer_name": st.session_state.get("manual_payer_name", ""),
-        "payer_id": st.session_state.get("manual_payer_id", "").strip(),
-        "npi": st.session_state.get("manual_npi", "").strip(),
-        "provider_specialty": st.session_state.get("manual_specialty", "").strip(),
-        "note_text": st.session_state.get("manual_note_text", "").strip(),
+        "claim_id": st.session_state.get(_mkey("claim_id"), "").strip(),
+        "payer_name": st.session_state.get(_mkey("payer_name"), ""),
+        "payer_id": st.session_state.get(_mkey("payer_id"), "").strip(),
+        "npi": st.session_state.get(_mkey("npi"), "").strip(),
+        "provider_specialty": st.session_state.get(_mkey("specialty"), "").strip(),
+        "note_text": st.session_state.get(_mkey("note_text"), "").strip(),
     }
 
     lines = [
         {
-            "cpt": st.session_state.get(f"sl_{row_id}_cpt", ""),
-            "mod1": st.session_state.get(f"sl_{row_id}_mod1", ""),
-            "mod2": st.session_state.get(f"sl_{row_id}_mod2", ""),
-            "units": st.session_state.get(f"sl_{row_id}_units", 1),
-            "icd10_1": st.session_state.get(f"sl_{row_id}_icd10_1", ""),
-            "icd10_2": st.session_state.get(f"sl_{row_id}_icd10_2", ""),
-            "icd10_3": st.session_state.get(f"sl_{row_id}_icd10_3", ""),
-            "icd10_4": st.session_state.get(f"sl_{row_id}_icd10_4", ""),
+            "cpt": st.session_state.get(_slkey(row_id, "cpt"), ""),
+            "mod1": st.session_state.get(_slkey(row_id, "mod1"), ""),
+            "mod2": st.session_state.get(_slkey(row_id, "mod2"), ""),
+            "units": st.session_state.get(_slkey(row_id, "units"), 1),
+            "icd10_1": st.session_state.get(_slkey(row_id, "icd10_1"), ""),
+            "icd10_2": st.session_state.get(_slkey(row_id, "icd10_2"), ""),
+            "icd10_3": st.session_state.get(_slkey(row_id, "icd10_3"), ""),
+            "icd10_4": st.session_state.get(_slkey(row_id, "icd10_4"), ""),
         }
         for row_id in st.session_state["manual_active_rows"]
     ]
@@ -584,14 +697,18 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
         st.session_state["manual_active_rows"] = [0]
         st.session_state["manual_next_row_id"] = 1
 
-    # ---- Claim Header ----
-    st.subheader("Claim Header")
+    # Default payer to Medicare — the coverage policy corpus (LCDs/NCDs) is
+    # Medicare-administrative-contractor policy, and payer otherwise has no
+    # effect on rule-layer or retrieval behavior (see caption below).
+    if _mkey("payer_name") not in st.session_state:
+        st.session_state[_mkey("payer_name")] = "Medicare"
+        st.session_state[_mkey("payer_id")] = get_payer_id("Medicare")
 
     col1, col2, col3 = st.columns(3)
     with col1:
         st.text_input(
             "Claim ID *",
-            key="manual_claim_id",
+            key=_mkey("claim_id"),
             placeholder="CLM-MANUAL-001",
         )
     with col2:
@@ -599,21 +716,25 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
         st.selectbox(
             "Payer *",
             options=payer_options,
-            key="manual_payer_name",
+            key=_mkey("payer_name"),
             on_change=_on_payer_name_change,
         )
     with col3:
         st.text_input(
             "Payer ID",
-            key="manual_payer_id",
+            key=_mkey("payer_id"),
             placeholder="Auto-populated from payer selection",
         )
+    st.caption(
+        "Payer doesn't change rule-layer findings or which policies are retrieved today — "
+        "it's shown to the AI agents as context only."
+    )
 
     col4, col5 = st.columns(2)
     with col4:
         st.text_input(
             "Provider NPI (optional)",
-            key="manual_npi",
+            key=_mkey("npi"),
             placeholder="10-digit NPI number",
             max_chars=10,
             help="Format validated here. Luhn check-digit and NPPES registry lookup run at review time.",
@@ -621,13 +742,13 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
     with col5:
         st.text_input(
             "Provider Specialty (optional)",
-            key="manual_specialty",
+            key=_mkey("specialty"),
             placeholder="e.g. Internal Medicine",
         )
 
     st.text_area(
         "Clinical Notes (optional)",
-        key="manual_note_text",
+        key=_mkey("note_text"),
         placeholder="Paste de-identified clinical documentation here…",
         height=80,
     )
@@ -636,7 +757,7 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
     st.divider()
 
     # ---- Service-Line Coding Grid ----
-    st.subheader("Service Lines")
+    st.markdown("#### Service Lines")
 
     hdr_cols = st.columns(_SL_COLS)
     for col, hdr in zip(hdr_cols, _SL_HEADERS):
@@ -648,14 +769,14 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
 
     for row_id in active_rows:
         cols = st.columns(_SL_COLS)
-        cols[0].text_input("CPT", key=f"sl_{row_id}_cpt", label_visibility="collapsed", placeholder="99213")
-        cols[1].text_input("Mod1", key=f"sl_{row_id}_mod1", label_visibility="collapsed", placeholder="25")
-        cols[2].text_input("Mod2", key=f"sl_{row_id}_mod2", label_visibility="collapsed", placeholder="")
-        cols[3].number_input("Units", key=f"sl_{row_id}_units", min_value=1, max_value=999, value=1, label_visibility="collapsed")
-        cols[4].text_input("ICD1", key=f"sl_{row_id}_icd10_1", label_visibility="collapsed", placeholder="Z00.00")
-        cols[5].text_input("ICD2", key=f"sl_{row_id}_icd10_2", label_visibility="collapsed", placeholder="")
-        cols[6].text_input("ICD3", key=f"sl_{row_id}_icd10_3", label_visibility="collapsed", placeholder="")
-        cols[7].text_input("ICD4", key=f"sl_{row_id}_icd10_4", label_visibility="collapsed", placeholder="")
+        cols[0].text_input("CPT", key=_slkey(row_id, "cpt"), label_visibility="collapsed", placeholder="99213")
+        cols[1].text_input("Mod1", key=_slkey(row_id, "mod1"), label_visibility="collapsed", placeholder="25")
+        cols[2].text_input("Mod2", key=_slkey(row_id, "mod2"), label_visibility="collapsed", placeholder="")
+        cols[3].number_input("Units", key=_slkey(row_id, "units"), min_value=1, max_value=999, value=1, label_visibility="collapsed")
+        cols[4].text_input("ICD1", key=_slkey(row_id, "icd10_1"), label_visibility="collapsed", placeholder="Z00.00")
+        cols[5].text_input("ICD2", key=_slkey(row_id, "icd10_2"), label_visibility="collapsed", placeholder="")
+        cols[6].text_input("ICD3", key=_slkey(row_id, "icd10_3"), label_visibility="collapsed", placeholder="")
+        cols[7].text_input("ICD4", key=_slkey(row_id, "icd10_4"), label_visibility="collapsed", placeholder="")
         if len(active_rows) > 1:
             if cols[8].button("✕", key=f"sl_rm_{row_id}", help="Remove this service line"):
                 rows_to_remove.append(row_id)
@@ -672,12 +793,23 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
         st.session_state["manual_next_row_id"] = next_id + 1
 
     btn_clear.button("🗑 Clear Form", key="manual_clear_btn", on_click=_clear_manual_form)
-    btn_example.button("📋 Load Worked Example", key="manual_example_btn", on_click=_load_worked_example)
+    btn_example.button("📋 Start from a template", key="manual_example_btn", on_click=_load_worked_example)
 
     st.divider()
+    st.markdown("<div style='height:22px'></div>", unsafe_allow_html=True)
 
-    # ---- Unified review button (recommended) ----
-    if st.button("🚀 Run Full Review", type="primary", key="manual_full_review_btn"):
+    # ---- Review buttons, side by side ----
+    btn_full, btn_rule = st.columns(2)
+    with btn_full:
+        run_full_clicked = st.button(
+            "🚀 Run Full Review", type="primary", key="manual_full_review_btn", use_container_width=True
+        )
+    with btn_rule:
+        run_rule_clicked = st.button(
+            "🔍 Review Claim (rule layer only)", type="secondary", key="manual_review_btn", use_container_width=True
+        )
+
+    if run_full_clicked:
         claim_dict, errors = _collect_manual_claim_dict_or_errors()
         if errors:
             for err in errors:
@@ -697,10 +829,7 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
             repo=repo,
         )
 
-    st.caption("or run checks separately:")
-
-    # ---- Review button (rule layer only) ----
-    if st.button("🔍 Review Claim (rule layer only)", key="manual_review_btn"):
+    if run_rule_clicked:
         claim_dict, errors = _collect_manual_claim_dict_or_errors()
         if errors:
             for err in errors:
@@ -724,6 +853,7 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
 
         label, kind = _RISK_CONFIG[risk]
         getattr(st, kind)(label)
+        _render_risk_explanation(risk, findings)
         _render_checks_summary(findings)
 
         if findings:
@@ -752,9 +882,21 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
 
 def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
     claims = load_claims()
-    claim_labels = [f"{c['claim_id']} — {c['description']}" for c in claims]
+    claim_labels = [
+        f"{c['claim_id']} — {c['description']}  ·  {c.get('demo_type', '')}"
+        for c in claims
+    ]
 
-    selected_label = st.selectbox("Select a synthetic claim", claim_labels)
+    jump_to = st.session_state.pop("_jump_to_claim", None)
+    if jump_to:
+        for label, c in zip(claim_labels, claims):
+            if c["claim_id"] == jump_to:
+                st.session_state["sample_claim_select"] = label
+                break
+
+    selected_label = st.selectbox(
+        "Select a demo scenario", claim_labels, key="sample_claim_select"
+    )
     selected_idx = claim_labels.index(selected_label)
     claim_dict = claims[selected_idx]
 
@@ -777,8 +919,19 @@ def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
             st.write(f"**Modifiers:** {mods}")
 
     st.divider()
+    st.markdown("<div style='height:22px'></div>", unsafe_allow_html=True)
 
-    if st.button("🚀 Run Full Review", type="primary", key="sample_full_review_btn"):
+    btn_full, btn_rule = st.columns(2)
+    with btn_full:
+        run_full_clicked = st.button(
+            "🚀 Run Full Review", type="primary", key="sample_full_review_btn", use_container_width=True
+        )
+    with btn_rule:
+        run_rule_clicked = st.button(
+            "🔍 Review Claim (rule layer only)", type="secondary", key="sample_review_btn", use_container_width=True
+        )
+
+    if run_full_clicked:
         _clear_review_state()
         claim = load_claim(claim_dict)
         st.session_state["full_review_assessment"] = run_review(claim)
@@ -796,8 +949,7 @@ def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
         )
         _render_cached_ai_demo(claim_dict["claim_id"])
 
-    st.caption("or run checks separately:")
-    if st.button("🔍 Review Claim (rule layer only)", key="sample_review_btn"):
+    if run_rule_clicked:
         _clear_review_state()
         claim = load_claim(claim_dict)
         findings = review_claim(claim)
@@ -816,6 +968,7 @@ def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
 
         label, kind = _RISK_CONFIG[risk]
         getattr(st, kind)(label)
+        _render_risk_explanation(risk, findings)
         _render_checks_summary(findings)
 
         if findings:
@@ -839,49 +992,231 @@ def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Header bar, landing state, Getting Started dialog
+# ---------------------------------------------------------------------------
+
+def _pill(text: str, bg: str, font_size: str = "0.78rem", padding: str = "3px 10px") -> str:
+    return (
+        f'<span style="background:{bg};color:#fff;padding:{padding};'
+        f'border-radius:12px;font-size:{font_size};font-weight:600;'
+        f'white-space:nowrap;">{text}</span>'
+    )
+
+
+_DATA_STATUS_LABELS = {
+    "file_backed": ("🟢 Data: Live CMS", "Live CMS"),
+    "synthetic_fallback": ("🟡 Data: Synthetic fallback", "Synthetic fallback"),
+    "mixed": ("🟡 Data: Mixed", "Mixed"),
+}
+
+
+def _render_header() -> str:
+    """Renders the title/badge row and the reviewer/AI/data-source/help controls
+    row. Returns the reviewer name. Replaces the old st.sidebar entirely."""
+    col_title, col_badge = st.columns([4, 2])
+    with col_title:
+        st.markdown("## 🏥 Denial Prevention Copilot")
+        st.caption("AI researches. Humans decide.")
+    with col_badge:
+        st.markdown(
+            f'<div style="text-align:right;padding-top:26px;">'
+            f'{_pill("Portfolio Project · Synthetic Data Only", "#1e3a8a", font_size="1.0rem", padding="5px 14px")}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    with st.container(key="header_controls_row"):
+        c_reviewer, c_ai, c_data, c_help = st.columns([2.2, 1.3, 1.6, 0.5])
+        with c_reviewer:
+            reviewer_name = st.text_input(
+                "Reviewer",
+                key="reviewer_name",
+                placeholder="Your name (required to save decisions)",
+            )
+        with c_ai:
+            if _AI_ENABLED:
+                st.markdown(
+                    f'<div style="margin-bottom:25px;">'
+                    f'{_pill("● AI: Enabled", "#16a34a", font_size="0.92rem", padding="5px 12px")}'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f'<div style="margin-bottom:25px;">'
+                    f'{_pill("● AI: Disabled", "#6b7280", font_size="0.92rem", padding="5px 12px")}'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+        with c_data:
+            summary = _data_source_summary()
+            label, _ = _DATA_STATUS_LABELS[summary["overall"]]
+            with st.popover(label):
+                st.caption(
+                    "Reference data backing the deterministic rule layer. Synthetic "
+                    "fallback tables are curated to behave correctly for the demo "
+                    "scenarios — they are smaller, not less accurate for this app."
+                )
+                for name, info in summary["datasets"].items():
+                    state = "🟢 file-backed" if info["status"] == "file_backed" else "🟡 synthetic fallback"
+                    st.markdown(f"**{name.upper()}** — {state}")
+                    if info.get("version"):
+                        st.caption(f"Version: {info['version']}" + (f" · effective {info['effective_date']}" if info.get("effective_date") else ""))
+        with c_help:
+            if st.button("❔", key="help_btn", help="Getting Started", type="primary"):
+                _getting_started_dialog()
+
+    st.markdown(
+        "<style>"
+        "div[class*='st-key-header_controls_row'] div[data-testid='stHorizontalBlock']"
+        "{ align-items: flex-end; }"
+        "</style>",
+        unsafe_allow_html=True,
+    )
+
+    if not _AI_ENABLED:
+        st.caption(
+            "AI Agents are disabled — add `ANTHROPIC_API_KEY` to your `.env` file to enable "
+            "live Coverage and Coding agents. Deterministic rule-engine review remains fully available."
+        )
+
+    return reviewer_name
+
+
+@st.dialog("Getting Started", width="large")
+def _getting_started_dialog() -> None:
+    st.markdown(
+        "**Denial Prevention Copilot** reviews a healthcare claim *before* it's "
+        "submitted and flags issues that commonly cause payer denials — bundling "
+        "conflicts, unit limits, missing modifiers, invalid codes, and medical "
+        "necessity / coverage concerns."
+    )
+
+    st.markdown("#### How it works")
+    st.code(
+        "Claim → Rule Engine → Coverage Agent + Coding Agent → Risk Assessment → Human Review → Audit Trail",
+        language=None,
+    )
+    st.markdown(
+        "- **Rule Engine** — deterministic checks (NCCI bundling, MUE unit limits, "
+        "NPI validity, ICD-10/CPT code validity, missing modifiers). Always runs, no API key needed.\n"
+        "- **Coverage Agent** / **Coding Agent** — LLM-backed, citation-grounded checks "
+        "against real LCD/NCD policy text. Require your own `ANTHROPIC_API_KEY`."
+    )
+
+    st.markdown("#### AI status you'll see in this app")
+    st.markdown(
+        "- **● AI: Enabled** — your `ANTHROPIC_API_KEY` is set; Coverage/Coding agents run live.\n"
+        "- **● AI: Disabled** — no key set; only the deterministic Rule Engine runs.\n"
+        "- **📋 Pre-generated demonstration results** — shown per-claim for select demo "
+        "scenarios when AI is disabled, so you can preview real agent output without an API call."
+    )
+
+    st.markdown("#### Confidence")
+    st.markdown(
+        "- Confidence reflects the system's certainty in a finding — it is **not** "
+        "a denial/approval guarantee.\n"
+        "- Findings below 70% confidence trigger a manual-review flag.\n"
+        "- AI confidence is not a substitute for coding or compliance judgment."
+    )
+
+    st.markdown("#### Limitations")
+    st.markdown(
+        "- **Synthetic data only** — no PHI, no real claims.\n"
+        "- **Not for clinical or billing use.** This is a prototype demonstrating an "
+        "architecture pattern, not production healthcare software. It has not been "
+        "validated against real claims, real payer adjudication, or real patient data.\n"
+        "- Human review is required before any claim decision."
+    )
+
+    with st.expander("About This Project"):
+        st.markdown(
+            "**Why was this built?**\n\n"
+            "Healthcare organizations often discover coding, coverage, and policy "
+            "issues *after* claim submission. This project explores how "
+            "deterministic rules, AI-assisted policy review, and human oversight "
+            "can work together to identify denial risk earlier."
+        )
+
+    with st.expander("What Changed (Release Notes)"):
+        st.markdown(
+            "- **v1.8a** — UI polish and first-time user experience: removed the "
+            "sidebar in favor of a header bar with reviewer/AI/data-source status, "
+            "consolidated demo and manual claim entry into one flow, added the "
+            "Getting Started onboarding dialog, finding-card source labels and "
+            "plain-English explanations, and a one-page layout for claim entry.\n"
+            "- **v1.7** — Quality hardening sprint: HCPCS support, citation excerpt "
+            "quality improvements, audit-log excerpt persistence, Claude Sonnet 4.6 "
+            "default model.\n"
+            "- **v1.6** — Public release hardening: API-key-safe demo mode so the app "
+            "runs fully without an `ANTHROPIC_API_KEY`.\n"
+            "- **v1.5** — ICD-10-CM dataset expansion for code validity checks.\n"
+            "- **v1.4** — Golden-set evaluation framework: measures finding "
+            "precision/recall/F1 against a labelled set of synthetic claims.\n"
+            "- **v1.3** — Coding Validation Agent added: diagnosis specificity and "
+            "coding-defensibility reasoning, alongside the existing Coverage Agent.\n"
+            "- **v1.2** — Unified Review: a light orchestrator and deterministic "
+            "denial-prevention synthesis combine rule-layer and Coverage Agent "
+            "findings into one risk assessment.\n"
+            "- **v1.1** — LCD/NCD retrieval pipeline: ChromaDB vector store and CMS "
+            "Coverage API ingestion power citation-grounded Coverage Agent findings.\n"
+            "- **v1.0** — Initial deterministic rule layer and UI: NCCI bundling, "
+            "MUE limits, diagnosis-procedure conflict, missing-modifier checks, "
+            "manual claim intake, and audit logging."
+        )
+
+    if st.button("Close"):
+        st.rerun()
+
+
+def _render_recommended_shortcuts(claims: list[dict]) -> None:
+    """Shown only under 'Pick a demo scenario', before a review has run."""
+    recommended_ids = ["CLM-001", "CLM-005", "CLM-003"]
+    by_id = {c["claim_id"]: c for c in claims}
+    recommended = [by_id[cid] for cid in recommended_ids if cid in by_id]
+
+    if recommended:
+        st.caption("Recommended:")
+        cols = st.columns(len(recommended))
+        for col, c in zip(cols, recommended):
+            with col:
+                if st.button(c.get("demo_type", c["claim_id"]), key=f"landing_{c['claim_id']}", use_container_width=True):
+                    st.session_state["_jump_to_claim"] = c["claim_id"]
+                    st.rerun()
+
+
+# ---------------------------------------------------------------------------
 # Page layout
 # ---------------------------------------------------------------------------
 
 def main() -> None:
     st.set_page_config(
         page_title="Denial Prevention Copilot",
-        page_icon="🏥",
+        page_icon="💵",
         layout="wide",
     )
 
+    st.markdown(
+        "<style>"
+        ".block-container{padding-top:2.5rem;padding-bottom:1rem;}"
+        "hr{margin:0.5rem 0 !important;}"
+        "div[data-testid='stVerticalBlock']{gap:0.6rem;}"
+        "</style>",
+        unsafe_allow_html=True,
+    )
+
     repo = get_repo()
-
-    with st.sidebar:
-        st.header("Reviewer")
-        reviewer_name = st.text_input(
-            "Your name",
-            key="reviewer_name",
-            placeholder="Enter your name to save decisions",
-        )
-        st.caption("Required to save decisions to the audit log.")
-
-        st.divider()
-        st.header("AI Agents")
-        if _AI_ENABLED:
-            st.success("✅ AI enabled — Coverage and Coding agents active")
-        else:
-            st.warning(
-                "⚠️ AI Agents Disabled\n\n"
-                "Coverage and Coding agents are off. Add `ANTHROPIC_API_KEY` "
-                "to your `.env` file to enable them.\n\n"
-                "Deterministic rule-engine review remains available."
-            )
-
-    st.title("Denial Prevention Copilot")
-    st.caption("AI researches. Humans decide.")
+    reviewer_name = _render_header()
     st.divider()
 
-    tab_review, tab_audit = st.tabs(["🔍 Review Claim", "📋 Audit Trail"])
+    tab_review, tab_audit = st.tabs(["🔍 Claim Review", "📋 Audit Trail"])
 
     with tab_review:
+        st.markdown("#### Claim Details")
+
         mode = st.radio(
-            "Claim entry mode",
-            options=["Sample Claim", "Manual Claim Entry"],
+            "Claim source",
+            options=["Pick a demo scenario", "Enter manually"],
             horizontal=True,
             key="claim_mode",
             label_visibility="collapsed",
@@ -893,9 +1228,16 @@ def main() -> None:
             _clear_review_state()
         st.session_state["_claim_mode_prev"] = mode
 
+        has_reviewed = any(
+            st.session_state.get(k)
+            for k in ("findings", "full_review_assessment", "manual_reviewed")
+        )
+        if mode == "Pick a demo scenario" and not has_reviewed:
+            _render_recommended_shortcuts(load_claims())
+
         st.divider()
 
-        if mode == "Sample Claim":
+        if mode == "Pick a demo scenario":
             _render_sample_mode(reviewer_name, repo)
         else:
             _render_manual_mode(reviewer_name, repo)

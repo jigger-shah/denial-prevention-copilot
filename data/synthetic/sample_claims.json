@@ -2,6 +2,7 @@
   {
     "claim_id": "CLM-001",
     "description": "PRD worked example — multiple denial triggers",
+    "demo_type": "Multi-Finding Claim · Rule + AI Demo",
     "payer": "Medicare Part B",
     "npi": "",
     "cpt_codes": ["99214", "80053", "80048", "36415"],
@@ -13,6 +14,7 @@
   {
     "claim_id": "CLM-002",
     "description": "Clean claim — URI, problem-oriented E/M with matching diagnosis",
+    "demo_type": "Coding Concern · AI Demo",
     "payer": "BCBS Commercial",
     "npi": "",
     "cpt_codes": ["99213", "85025"],
@@ -24,6 +26,7 @@
   {
     "claim_id": "CLM-003",
     "description": "Bundling issue only — metabolic panels with hypertension",
+    "demo_type": "Bundling Issue · Rule Engine Demo",
     "payer": "Medicare Part B",
     "npi": "",
     "cpt_codes": ["99213", "80053", "80048"],
@@ -35,6 +38,7 @@
   {
     "claim_id": "CLM-004",
     "description": "Diagnosis mismatch only — well-visit dx billed with problem E/M",
+    "demo_type": "Diagnosis Mismatch · Rule Engine Demo",
     "payer": "Medicare Part B",
     "npi": "",
     "cpt_codes": ["99214"],
@@ -46,6 +50,7 @@
   {
     "claim_id": "CLM-005",
     "description": "Clean preventive visit — correct preventive code with well-visit dx",
+    "demo_type": "Coverage Concern · AI Demo",
     "payer": "Medicare Part B",
     "npi": "",
     "cpt_codes": ["99395"],

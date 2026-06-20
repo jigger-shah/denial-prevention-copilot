@@ -278,6 +278,14 @@ def check_code_validity(claim: ClaimIn) -> list[Finding]:
     code_set = set(claim.cpt_codes)
 
     # --- Dx-to-procedure conflict checks ---
+    # Intentionally exact-match, not prefix-match like missing_modifier_25 below.
+    # TD-25 considered widening this to the full Z00 family (to match
+    # missing_modifier_25's prefix match) but the golden evaluation set
+    # (evaluation/golden_claims.json GOLD-005, GOLD-013) calibrates Z00.01 to
+    # raise missing_modifier_25 only, NOT dx_procedure_conflict, while Z00.00
+    # raises both (GOLD-006/007/014). That's a deliberate severity distinction
+    # in the calibrated dataset, not an oversight — widening this check to
+    # Z00.01 regresses two golden-set precision tests. TD-25 stays deferred.
     for rule in _load_dx_procedure_rules():
         if rule["icd10"] not in claim.icd10_codes:
             continue
