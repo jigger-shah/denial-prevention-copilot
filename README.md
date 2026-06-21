@@ -65,7 +65,7 @@ Claim entry is a single "Claim Details" flow: pick "Pick a demo scenario" or "En
 
 AI-sourced finding cards include a **"Supporting Policies Reviewed"** section listing other LCD/NCD policies the agent retrieved and considered but didn't cite as the basis for the finding (TD-22) — separate from the primary citation, so it's never read as additional evidence.
 
-The audit trail is demo-local: on hosted deployments such as Streamlit Cloud, audit history may reset when the app restarts, redeploys, or sleeps — acceptable here since the app uses synthetic demo data only.
+The audit database initializes automatically on first app load — no manual setup step is required, and the schema is re-applied (idempotently) on every connection, so it self-repairs if the underlying file is ever recreated empty mid-session. The audit trail is demo-local: on hosted deployments such as Streamlit Cloud, audit history may reset when the app restarts, redeploys, or sleeps — acceptable here since the app uses synthetic demo data only.
 
 ## Test
 

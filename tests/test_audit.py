@@ -60,6 +60,46 @@ def test_default_db_path_is_under_temp_dir():
     assert DB_PATH.name == "denial_copilot_audit.db"
 
 
+def test_get_decisions_self_heals_when_table_missing(tmp_path):
+    """If the DB file exists but audit_decisions is missing (e.g. the OS temp
+    dir was cleared out from under a long-running cached AuditRepository),
+    a read must not raise 'no such table' — the schema must be (re)applied
+    transparently and the call must succeed with an empty result."""
+    import sqlite3
+
+    db_path = tmp_path / "schemaless.db"
+    sqlite3.connect(db_path).close()  # file exists, no tables
+
+    repo = AuditRepository(db_path=db_path)
+    assert repo.get_decisions() == []
+
+
+def test_export_decisions_csv_self_heals_when_table_missing(tmp_path):
+    """Same self-healing guarantee for the CSV export read path."""
+    import sqlite3
+
+    db_path = tmp_path / "schemaless_export.db"
+    sqlite3.connect(db_path).close()
+
+    repo = AuditRepository(db_path=db_path)
+    assert repo.export_decisions_csv() == ""
+
+
+def test_save_decision_self_heals_when_table_missing(tmp_path):
+    """A save against a DB file with no schema must create the schema and
+    succeed, rather than requiring a prior explicit initialize_database()."""
+    import sqlite3
+
+    db_path = tmp_path / "schemaless_save.db"
+    sqlite3.connect(db_path).close()
+
+    repo = AuditRepository(db_path=db_path)
+    repo.save_decision(_make_decision())
+    rows = repo.get_decisions()
+    assert len(rows) == 1
+    assert rows[0]["finding_id"] == "abc123def456"
+
+
 def test_repository_with_no_db_path_arg_uses_default():
     """AuditRepository() with no args must still work end-to-end against the
     temp-dir default — explicit db_path (as every other test uses) must remain

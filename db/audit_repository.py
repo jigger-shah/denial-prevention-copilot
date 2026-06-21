@@ -108,25 +108,30 @@ class AuditRepository:
         self._db_path = db_path
 
     def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self._db_path)
+        # The schema is (re)applied on every connect, not just once at startup.
+        # get_repo() in app/main.py is @st.cache_resource, so initialize_database()
+        # normally only runs once per server process. The default DB_PATH lives in
+        # the OS temp directory, which can be cleared by the OS (or a reboot) while
+        # the Streamlit process keeps running — the next sqlite3.connect() silently
+        # recreates an empty file with no tables. Re-applying the idempotent
+        # CREATE TABLE IF NOT EXISTS / ALTER TABLE here heals that case automatically.
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(self._db_path)
+        conn.execute(_CREATE_TABLE_SQL)
+        try:
+            conn.execute(_MIGRATE_ADD_EFFECTIVE_DATE_SQL)
+        except Exception:
+            pass
+        try:
+            conn.execute(_MIGRATE_ADD_EXCERPT_SQL)
+        except Exception:
+            pass
+        conn.commit()
+        return conn
 
     def initialize_database(self) -> None:
         """Create the audit_decisions table if it does not exist, and apply migrations."""
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
-            conn.execute(_CREATE_TABLE_SQL)
-            # Sprint 3 migration: add citation_effective_date to existing DBs.
-            # SQLite raises OperationalError if the column already exists; ignore it.
-            try:
-                conn.execute(_MIGRATE_ADD_EFFECTIVE_DATE_SQL)
-            except Exception:
-                pass
-            # v1.7 migration: add citation_excerpt to existing DBs.
-            try:
-                conn.execute(_MIGRATE_ADD_EXCERPT_SQL)
-            except Exception:
-                pass
-            conn.commit()
+        self._connect().close()
 
     def save_decision(self, decision: AuditDecision) -> int:
         """
