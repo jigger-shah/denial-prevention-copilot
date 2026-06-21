@@ -212,6 +212,8 @@ Use SQLite (`db/audit.db`) via the standard library `sqlite3` module with no ORM
 - The `DB_PATH` defaults to `pathlib.Path(__file__).parent / "audit.db"` — co-located with the repository code for development. Production would set this via environment variable.
 - Tests use `tmp_path / "test_audit.db"` — the production database is never touched by the test suite.
 
+> **Update (Phase 10, Streamlit Cloud deployment readiness, post-2026-06-20):** The second bullet above is now stale. `DB_PATH` defaults to `pathlib.Path(tempfile.gettempdir()) / "denial_copilot_audit.db"`, not a path co-located with the repository — Streamlit Cloud's filesystem is ephemeral, so a temp-dir default makes the audit trail's reset-on-restart behavior explicit by design rather than something a future "production via environment variable" change would need to retrofit. The explicit `db_path` override this ADR's rationale already anticipated (constructor parameter, used by every test) made this a one-line change. See `docs/Roadmap.md` Phase 10 and `docs/Repository_Status_Report.md`'s Phase 10 update.
+
 ---
 
 ## ADR-006: Repository Pattern for Database Access

@@ -16,7 +16,6 @@ Manual claim transformation lives in app/claim_intake.py (no Streamlit there).
 """
 
 import json
-import os
 import pathlib
 import sys
 
@@ -35,6 +34,7 @@ from rules.rule_engine import load_claim, review_claim, overall_risk, CHECKS_RUN
 from rules.data_source_status import get_data_source_status
 from agents.coverage_validation import validate_coverage
 from agents.orchestrator import run_review
+from agents.secrets import get_secret
 from db.audit_repository import AuditDecision, AuditRepository
 from retrieval.policy_repository import get_citation_detail
 from app.claim_intake import (
@@ -50,7 +50,7 @@ from app.claim_intake import (
 # Constants
 # ---------------------------------------------------------------------------
 
-_AI_ENABLED: bool = bool(os.getenv("ANTHROPIC_API_KEY"))
+_AI_ENABLED: bool = bool(get_secret("ANTHROPIC_API_KEY"))
 
 CLAIMS_FILE = pathlib.Path(__file__).parent.parent / "data" / "synthetic" / "sample_claims.json"
 CACHED_AI_DEMO_FILE = pathlib.Path(__file__).parent.parent / "data" / "synthetic" / "cached_ai_demo_artifacts.json"

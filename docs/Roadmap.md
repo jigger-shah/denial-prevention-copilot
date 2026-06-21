@@ -682,18 +682,19 @@ Make the repository publicly visible. Phase 8.6 (v1.6) already delivered the REA
 
 ## Phase 10 — Streamlit Cloud Deployment
 
-**Status:** Future  
-**Estimated scope:** 1 session
+**Status:** In progress — code readiness complete, deploy not yet attempted  
+**Estimated scope:** 1 session  
+**Tests:** 497 tests, all passing (+9 over the pre-work 488)
 
 ### Objectives
 Deploy the application to Streamlit Cloud so it is accessible via a public URL without local setup.
 
 ### Deliverables
-- `requirements.txt` verified against Streamlit Cloud's Python environment
-- Streamlit Cloud secrets configured for `ANTHROPIC_API_KEY`
-- `st.secrets` used instead of `os.getenv` for cloud deployment
-- `db/audit.db` path updated to use a temp directory (cloud deployments don't have persistent disk)
-- Live URL linked from GitHub README
+- ✅ `st.secrets` used instead of bare `os.getenv` for cloud deployment — `agents/secrets.py:get_secret()` checks the OS environment variable first (local `.env` via python-dotenv, unchanged behavior), then falls back to `st.secrets`, wrapped in `try/except` so a local run with no `.streamlit/secrets.toml` never crashes. Used for both `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` in `app/main.py`, `agents/orchestrator.py`, `agents/coverage_validation.py`, `agents/coding_validation.py`.
+- ✅ `db/audit.db` path updated to use a temp directory — `db/audit_repository.py:DB_PATH` now defaults to `pathlib.Path(tempfile.gettempdir()) / "denial_copilot_audit.db"` instead of a path inside the repo; explicit `db_path` override (used by all tests) is unaffected. README documents that the audit trail is demo-local and may reset on hosted restarts.
+- ⬜ `requirements.txt` verified against Streamlit Cloud's Python environment — pinned to locally-tested versions; not yet verified against an actual Cloud build
+- ⬜ Streamlit Cloud secrets configured for `ANTHROPIC_API_KEY` — deploy-time action, not yet performed (no deploy attempted)
+- ⬜ Live URL linked from GitHub README — pending the deploy itself
 
 ### Dependencies
 - Phase 9 complete (repository is public and polished)
@@ -733,4 +734,4 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 | 8.8 — UI Polish & First-Time UX (v1.8a) | ✅ Complete | Sidebar removed, header bar (AI + Data Source status pills), claim-entry consolidation, Getting Started onboarding, source badges, risk visualization, Clear Form + Add/Remove Service Line bug fixes; 482 tests | Portfolio |
 | 8.9 — Citation Transparency (v1.8b) | ✅ Complete | TD-22 resolved: Supporting Policies Reviewed UI + retrieved_policies plumbing through both agents and the orchestrator; 488 tests | P1 |
 | 9 — Portfolio Publication | 🔜 | Repo set to public, optional CI | Portfolio |
-| 10 — Streamlit Cloud | 🔜 | Live public URL | Portfolio |
+| 10 — Streamlit Cloud | 🟡 In progress | Code readiness complete (secrets helper, audit DB temp path); deploy + live URL pending; 497 tests | Portfolio |

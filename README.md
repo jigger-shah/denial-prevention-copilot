@@ -8,7 +8,16 @@ Built on free public data: NPPES NPI Registry, CMS Coverage API (NCDs/LCDs), NCC
 
 > **Not for clinical or billing use.** This is a synthetic-data prototype demonstrating an architecture pattern, not production healthcare software. It is not HIPAA certified and has not been validated against real claims, real payer adjudication, or real patient data. Do not use it to make actual coverage, coding, or billing decisions.
 
-**Status:** v1.8b (Citation & Transparency) complete — 488 tests passing. v1.8a added the current header-based UI (reviewer name, AI status, data-source status, Getting Started onboarding); v1.8b closed TD-22, surfacing every policy an AI agent considered, not just the one it cited. Default AI model: Claude Sonnet 4.6 (override with `ANTHROPIC_MODEL`). See `docs/Technical_Debt_Register.md` for the full TD-24 calibration history and the Haiku/Sonnet/Opus model comparison behind that choice.
+**Status:** v1.8b (Citation & Transparency) complete — 497 tests passing. v1.8a added the current header-based UI (reviewer name, AI status, data-source status, Getting Started onboarding); v1.8b closed TD-22, surfacing every policy an AI agent considered, not just the one it cited. Streamlit Cloud deployment readiness (Phase 10) is partially complete: a `get_secret()` helper (`agents/secrets.py`) resolves `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL` from either a local `.env`/environment variable or Streamlit Cloud's `st.secrets`, and the audit database now defaults to the OS temp directory rather than a path inside the repo, since Streamlit Cloud's filesystem is ephemeral. Default AI model: Claude Sonnet 4.6 (override with `ANTHROPIC_MODEL`). See `docs/Technical_Debt_Register.md` for the full TD-24 calibration history and the Haiku/Sonnet/Opus model comparison behind that choice.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Header and landing state](docs/screenshots/01_header_and_landing.png) | ![Findings with source badges](docs/screenshots/03_findings_with_source_badges.png) |
+| Header bar (AI status, data-source status, Getting Started) with the demo-scenario landing state | Findings with severity + source badges (Rule Engine / Coverage Agent / Coding Agent) |
+| ![Supporting Policies Reviewed](docs/screenshots/04_supporting_policies_reviewed.png) | ![Getting Started dialog](docs/screenshots/05_getting_started_dialog.png) |
+| "Supporting Policies Reviewed" — every policy an AI agent considered, not just the one it cited (TD-22) | The Getting Started onboarding dialog |
 
 ## Setup
 
@@ -55,6 +64,8 @@ The app has no sidebar — the reviewer name field and two status pills live in 
 Claim entry is a single "Claim Details" flow: pick "Pick a demo scenario" or "Enter manually" — there's no separate Sample Claim/Manual Claim Entry tab split.
 
 AI-sourced finding cards include a **"Supporting Policies Reviewed"** section listing other LCD/NCD policies the agent retrieved and considered but didn't cite as the basis for the finding (TD-22) — separate from the primary citation, so it's never read as additional evidence.
+
+The audit trail is demo-local: on hosted deployments such as Streamlit Cloud, audit history may reset when the app restarts, redeploys, or sleeps — acceptable here since the app uses synthetic demo data only.
 
 ## Test
 

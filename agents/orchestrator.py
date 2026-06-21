@@ -29,12 +29,11 @@ code, coverage, and coding alone.
 
 from __future__ import annotations
 
-import os
-
 from agents import denial_prevention
 from agents.coding_validation import validate_coding
 from agents.coverage_validation import validate_coverage
 from agents.run_logger import timed_run
+from agents.secrets import get_secret
 from rules.models import ClaimIn, Finding, RiskAssessment
 from rules.rule_engine import CHECKS_RUN, review_claim
 
@@ -43,8 +42,8 @@ _CODING_CHECK_LABEL = "Coding validation — LLM coding defensibility review"
 
 
 def _ai_enabled() -> bool:
-    """True iff ANTHROPIC_API_KEY is set. No Anthropic client is constructed otherwise."""
-    return bool(os.getenv("ANTHROPIC_API_KEY"))
+    """True iff ANTHROPIC_API_KEY is set (env var or Streamlit secrets). No Anthropic client is constructed otherwise."""
+    return bool(get_secret("ANTHROPIC_API_KEY"))
 
 
 def run_review(claim: ClaimIn) -> tuple[RiskAssessment, dict[str, list[dict]]]:

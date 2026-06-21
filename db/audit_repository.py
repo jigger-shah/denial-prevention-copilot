@@ -5,22 +5,30 @@ All writes go through AuditRepository; the UI must never call sqlite3 directly.
 The audit_decisions table is append-only: no UPDATE, no DELETE.
 
 Usage:
-    repo = AuditRepository()          # defaults to db/audit.db
+    repo = AuditRepository()          # defaults to a temp-dir audit.db
     repo.initialize_database()
     repo.save_decision(decision)
     rows = repo.get_decisions(claim_id="CLM-001")
     csv_str = repo.export_decisions_csv()
+
+DB_PATH defaults to the OS temp directory rather than a path inside this
+package. Streamlit Cloud's filesystem is ephemeral — the audit trail is not
+expected to survive an app restart/redeploy there, and a temp-dir path makes
+that explicit rather than accidental (see README's "AI features" section).
+Within a single running session the database still works exactly as before;
+pass db_path explicitly (as the tests do) to use a different location.
 """
 
 import csv
 import io
 import pathlib
 import sqlite3
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
-DB_PATH = pathlib.Path(__file__).parent / "audit.db"
+DB_PATH = pathlib.Path(tempfile.gettempdir()) / "denial_copilot_audit.db"
 
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS audit_decisions (

@@ -6,10 +6,12 @@ db/audit.db is never touched.
 """
 
 import dataclasses
+import pathlib
+import tempfile
 
 import pytest
 
-from db.audit_repository import AuditDecision, AuditRepository
+from db.audit_repository import DB_PATH, AuditDecision, AuditRepository
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +46,35 @@ def _make_decision(**overrides) -> AuditDecision:
         prompt_version="n/a",
     )
     return dataclasses.replace(base, **overrides)
+
+
+# ---------------------------------------------------------------------------
+# Default DB path (Phase 10 — Streamlit Cloud ephemeral filesystem)
+# ---------------------------------------------------------------------------
+
+def test_default_db_path_is_under_temp_dir():
+    """DB_PATH must default to the OS temp dir, not a path inside this package —
+    Streamlit Cloud's filesystem is ephemeral, and a temp-dir path makes the
+    audit trail's reset-on-restart behavior explicit rather than accidental."""
+    assert DB_PATH.parent == pathlib.Path(tempfile.gettempdir())
+    assert DB_PATH.name == "denial_copilot_audit.db"
+
+
+def test_repository_with_no_db_path_arg_uses_default():
+    """AuditRepository() with no args must still work end-to-end against the
+    temp-dir default — explicit db_path (as every other test uses) must remain
+    a fully-supported override, not the only working path."""
+    DB_PATH.unlink(missing_ok=True)
+    try:
+        repo = AuditRepository()
+        assert repo._db_path == DB_PATH
+        repo.initialize_database()
+        decision = _make_decision()
+        repo.save_decision(decision)
+        rows = repo.get_decisions(claim_id=decision.claim_id)
+        assert any(r["finding_id"] == decision.finding_id for r in rows)
+    finally:
+        DB_PATH.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------

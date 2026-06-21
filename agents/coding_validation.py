@@ -26,7 +26,6 @@ Governance rules (all enforced here, identical to Coverage Validation):
 
 import hashlib
 import logging
-import os
 import pathlib
 import re
 
@@ -38,6 +37,7 @@ from retrieval.chunking import (
     starts_with_dangling_fragment,
     trim_leading_fragment,
 )
+from agents.secrets import get_secret
 from retrieval.policy_repository import find_policies_by_codes
 from retrieval.vector_store import VectorStore
 from rules.models import Citation, ClaimIn, Finding
@@ -185,7 +185,7 @@ def validate_coding(
     findings is [] if no API key, no matching LCD/NCD policies, model error, or
     model calls no_coding_concern.
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = get_secret("ANTHROPIC_API_KEY")
     if not api_key:
         return [], []
 
@@ -195,7 +195,7 @@ def validate_coding(
 
     retrieved_doc_ids = {p["document_id"] for p in lcd_policies}
 
-    model = os.getenv("ANTHROPIC_MODEL", _DEFAULT_MODEL)
+    model = get_secret("ANTHROPIC_MODEL", _DEFAULT_MODEL)
     user_message = _build_user_message(claim, lcd_policies, rule_findings)
 
     try:
