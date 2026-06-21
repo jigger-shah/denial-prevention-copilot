@@ -833,7 +833,7 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
         cols[0].text_input("CPT", key=_slkey(row_id, "cpt"), label_visibility="collapsed", placeholder="99213")
         cols[1].text_input("Mod1", key=_slkey(row_id, "mod1"), label_visibility="collapsed", placeholder="25")
         cols[2].text_input("Mod2", key=_slkey(row_id, "mod2"), label_visibility="collapsed", placeholder="")
-        cols[3].number_input("Units", key=_slkey(row_id, "units"), min_value=1, max_value=999, value=1, label_visibility="collapsed")
+        cols[3].number_input("Units", key=_slkey(row_id, "units"), min_value=1, max_value=999, label_visibility="collapsed")
         cols[4].text_input("ICD1", key=_slkey(row_id, "icd10_1"), label_visibility="collapsed", placeholder="Z00.00")
         cols[5].text_input("ICD2", key=_slkey(row_id, "icd10_2"), label_visibility="collapsed", placeholder="")
         cols[6].text_input("ICD3", key=_slkey(row_id, "icd10_3"), label_visibility="collapsed", placeholder="")
