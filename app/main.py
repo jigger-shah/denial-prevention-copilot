@@ -1209,6 +1209,11 @@ def _getting_started_dialog() -> None:
 
     with st.expander("What Changed (Release Notes)"):
         st.markdown(
+            "- **v1.9** — Streamlit Cloud deployment readiness: a `get_secret()` "
+            "helper resolves `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL` from either a "
+            "local `.env` or Streamlit Cloud's secrets, and the audit database now "
+            "defaults to a temp directory since Streamlit Cloud's filesystem is "
+            "ephemeral.\n"
             "- **v1.8b** — Citation transparency: AI-sourced finding cards now show "
             "a \"Supporting Policies Reviewed\" section listing other policies the "
             "agent retrieved and considered but didn't cite — closes TD-22.\n"

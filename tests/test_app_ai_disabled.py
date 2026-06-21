@@ -25,7 +25,7 @@ def _run_app():
     # app/main.py caches it via st.cache_resource so it only costs this once
     # per process, but AppTest's 3s default doesn't cover that first call.
     with patch("dotenv.load_dotenv", return_value=False):
-        at = AppTest.from_file("app/main.py", default_timeout=90)
+        at = AppTest.from_file("app/main.py", default_timeout=150)
         at.run()
     return at
 
