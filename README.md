@@ -31,9 +31,26 @@ The MVP includes:
 - Human review workflow
 - Audit trail
 - Manual claim review
-- Streamlit Cloud deployment support
+- Streamlit Cloud deployment hardening
+- Self-healing audit database initialization
+- Graceful ChromaDB fallback behavior
+- Live CMS rule-layer support using maintainer-managed GitHub Release Assets
+- Expanded automated test coverage (549+ passing tests)
 
 Engineering release history continues internally through v1.9.x releases, which represent deployment, reliability, testing, and operational hardening improvements beyond the original MVP scope. The public V1.0 MVP designation corresponds to engineering releases v1.8a (UI polish and first-time UX), v1.8b (citation transparency / Supporting Policies Reviewed), and v1.9.x (Streamlit Cloud deployment readiness, audit-schema self-healing, ChromaDB graceful fallback, and manual-claim AI execution parity). The in-app "Getting Started" → "What Changed" notes show only the public-facing V1.0 MVP summary; full engineering version history — v1.0 through v1.9.x — is preserved in `docs/Roadmap.md`. 523 tests passing. Default AI model: Claude Sonnet 4.6 (override with `ANTHROPIC_MODEL`). See `docs/Technical_Debt_Register.md` for the full TD-24 calibration history and the Haiku/Sonnet/Opus model comparison behind that choice.
+
+## Demonstrated Capabilities
+
+- Deterministic claim validation
+- NCCI bundling detection
+- MUE validation
+- ICD-10 validation
+- Coverage policy review
+- Coding validation
+- Human-in-the-loop review workflow
+- Audit trail and governance
+- Explainable findings with citations
+- Live CMS reference datasets (current implementation)
 
 ## Screenshots
 
