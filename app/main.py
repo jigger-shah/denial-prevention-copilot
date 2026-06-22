@@ -33,6 +33,7 @@ load_dotenv()
 from rules.models import Citation, Finding
 from rules.rule_engine import load_claim, review_claim, overall_risk, CHECKS_RUN
 from rules.data_source_status import get_data_source_status
+from rules import cms_asset_fetch, icd10_loader, mue_loader, ncci_loader
 from agents.coverage_validation import validate_coverage
 from agents.orchestrator import run_review
 from agents.secrets import get_secret
@@ -1136,6 +1137,7 @@ _DATA_STATUS_LABELS = {
     "file_backed": ("🟢 Data: Live CMS", "Live CMS"),
     "synthetic_fallback": ("🟡 Data: Synthetic fallback", "Synthetic fallback"),
     "mixed": ("🟡 Data: Mixed", "Mixed"),
+    "not_checked": ("⚪ Data: Not Refreshed", "Not Refreshed"),
 }
 
 _SESSION_API_KEY_NAME = "ANTHROPIC_API_KEY"
@@ -1179,17 +1181,14 @@ def _render_header() -> str:
     """Renders the title/badge row and the reviewer/AI/data-source/help controls
     row. Returns the reviewer name. Replaces the old st.sidebar entirely.
 
-    The Data Source status is the one piece of this header that can be slow
-    to compute (rules.data_source_status parses the full CMS reference files
-    when present locally, or attempts an optional CMS asset download) — so it
-    must never block the rest of the header from rendering. The title,
-    reviewer field, AI pill, gear icon, and help button all render
-    unconditionally and immediately; the Data pill shows a "Checking…"
-    placeholder on first render, then this function triggers exactly one
-    st.rerun() after computing the real status (cache_resource-backed, so
-    every subsequent render — including the one right after that rerun — is
-    instant) to swap the placeholder for the resolved "Live CMS"/"Synthetic
-    fallback"/"Mixed" pill.
+    The Data Source status is entirely user-initiated, mirroring the gear-icon
+    session API key control's UX: no check, no CMS asset download, and no
+    rerun happens on page load. The Data pill defaults to a neutral "Not
+    Refreshed" state; rules.data_source_status is only computed when the user
+    clicks "Check CMS Data Availability" inside the pill's popover, and the
+    resolved result is cached in st.session_state for the rest of the browser
+    session (or until "Refresh Data Status" is clicked) — no calculation
+    logic changed, only when it runs.
     """
     data_source_ready = st.session_state.get("_data_source_ready", False)
     summary = st.session_state.get("_data_source_summary_cache") if data_source_ready else None
@@ -1233,16 +1232,19 @@ def _render_header() -> str:
             with st.container(key="ai_gear_col"):
                 _render_session_api_key_popover()
         with c_data:
-            if summary is None:
-                st.markdown(
-                    f'<div style="margin-bottom:25px;">'
-                    f'{_pill("🔄 Data: Checking…", "#6b7280", font_size="0.92rem", padding="5px 12px")}'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                label, _ = _DATA_STATUS_LABELS[summary["overall"]]
-                with st.popover(label):
+            label, _ = _DATA_STATUS_LABELS[summary["overall"] if summary is not None else "not_checked"]
+            with st.popover(label):
+                if summary is None:
+                    st.caption(
+                        "CMS data status is not checked automatically — this app never "
+                        "downloads or parses CMS reference files until you ask it to."
+                    )
+                    if st.button("🔍 Check CMS Data Availability", key="check_cms_data_btn", use_container_width=True):
+                        with st.spinner("Checking CMS data availability…"):
+                            st.session_state["_data_source_summary_cache"] = _data_source_summary()
+                            st.session_state["_data_source_ready"] = True
+                        st.rerun()
+                else:
                     st.caption(
                         "Reference data backing the deterministic rule layer. Synthetic "
                         "fallback tables are curated to behave correctly for the demo "
@@ -1258,6 +1260,24 @@ def _render_header() -> str:
                             st.caption("📥 Downloaded from a configured GitHub Release Asset.")
                         elif info.get("download_attempted") and info.get("download_error"):
                             st.caption(f"⚠️ Download attempted but failed ({info['download_error']}) — using fallback.")
+                    st.divider()
+                    if st.button("🔄 Refresh Data Status", key="refresh_cms_data_btn", use_container_width=True):
+                        # Clear every layer that's memoized per-process (not just this
+                        # function's own cache_resource) — otherwise re-checking after
+                        # updating secrets or deploying new CMS assets would just
+                        # re-display the same stale result these caches already hold.
+                        # Existing test-only helpers, reused as-is — no new cache-
+                        # invalidation logic written for this.
+                        _data_source_summary.clear()
+                        ncci_loader._clear_ncci_cache()
+                        mue_loader._clear_mue_cache()
+                        icd10_loader._clear_icd10_cache()
+                        cms_asset_fetch._clear_cms_asset_cache()
+                        with st.spinner("Checking CMS data availability…"):
+                            st.session_state["_data_source_summary_cache"] = _data_source_summary()
+                            st.session_state["_data_source_ready"] = True
+                        st.rerun()
+                    st.caption("Useful after updating secrets, deploying new CMS assets, or testing in a different environment.")
         with c_help:
             if st.button("❔", key="help_btn", help="Getting Started", type="primary"):
                 _getting_started_dialog()
@@ -1271,17 +1291,6 @@ def _render_header() -> str:
         "</style>",
         unsafe_allow_html=True,
     )
-
-    if not data_source_ready:
-        # The header above has already been fully rendered and streamed to the
-        # browser at this point — this computation (slow on a machine with the
-        # full local CMS files present, or while an optional CMS asset download
-        # runs) happens after that, never blocking the rest of the header. The
-        # rerun swaps the "Checking…" placeholder for the resolved pill; that
-        # rerun is instant since _data_source_summary() is cache_resource-backed.
-        st.session_state["_data_source_summary_cache"] = _data_source_summary()
-        st.session_state["_data_source_ready"] = True
-        st.rerun()
 
     return reviewer_name
 

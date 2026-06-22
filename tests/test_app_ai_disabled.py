@@ -18,12 +18,12 @@ from streamlit.testing.v1 import AppTest
 
 
 def _run_app():
-    # default_timeout is generous because app/main.py's header bar calls
-    # rules.data_source_status.get_data_source_status() on every run. On a dev
-    # machine with the full local CMS reference files present, that loader's
-    # first real parse of the ~266MB NCCI/MUE/ICD-10 files can take a while;
-    # app/main.py caches it via st.cache_resource so it only costs this once
-    # per process, but AppTest's 3s default doesn't cover that first call.
+    # default_timeout is a generous safety margin. The header's Data Source
+    # status is now fully user-initiated (a "Check CMS Data Availability"
+    # button inside the Data pill's popover) — app/main.py's header bar no
+    # longer calls rules.data_source_status on page load at all, so the slow
+    # first-real-parse cost this timeout originally existed for no longer
+    # applies to a bare page render; left generous regardless as headroom.
     with patch("dotenv.load_dotenv", return_value=False):
         at = AppTest.from_file("app/main.py", default_timeout=150)
         at.run()

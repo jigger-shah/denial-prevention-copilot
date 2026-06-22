@@ -341,7 +341,9 @@ def _run_app():
 
 def test_app_boots_with_no_cms_urls_configured(monkeypatch):
     """No CMS_* env vars set (the default, e.g. a fresh clone) — app must boot
-    with no exception, exactly as before this feature existed."""
+    with no exception. CMS data status is now user-initiated (Phase 13's
+    "Check CMS Data Availability" button), so unconfigured URLs no longer
+    matter for boot at all — nothing touches them until that button is clicked."""
     for name in (
         "CMS_NCCI_F1_URL", "CMS_NCCI_F2_URL", "CMS_NCCI_F3_URL", "CMS_NCCI_F4_URL",
         "CMS_MUE_URL", "CMS_ICD10_URL",
@@ -353,16 +355,19 @@ def test_app_boots_with_no_cms_urls_configured(monkeypatch):
 
 
 def test_app_boots_with_invalid_cms_urls_configured(monkeypatch):
-    """Configured-but-unreachable URLs must never block app boot — the
-    download attempt happens lazily on first data_source_status access, and
-    any failure there must degrade gracefully, not crash page render. The
-    network call itself is mocked to fail deterministically (no real network
-    access, no DNS dependency, no flakiness) — this test is about app boot
-    behavior on failure, not about exercising a real network timeout."""
+    """Configured-but-unreachable URLs must never block app boot. The download
+    attempt is now user-initiated (the Data pill's "Check CMS Data
+    Availability" button) rather than automatic on load, so this explicitly
+    clicks that button to exercise the same failure-degrades-gracefully path
+    the original (pre-Phase-13) automatic check used to cover. The network
+    call itself is mocked to fail deterministically (no real network access,
+    no DNS dependency, no flakiness)."""
     monkeypatch.setenv("CMS_NCCI_F1_URL", "https://example.invalid/does-not-exist.xlsx")
     monkeypatch.setenv("CMS_MUE_URL", "not-even-a-valid-url")
 
     with patch("rules.cms_asset_fetch.requests.get", side_effect=ConnectionError("simulated unreachable")):
         at = _run_app()
+        assert not at.exception
+        at.button(key="check_cms_data_btn").click().run()
 
     assert not at.exception

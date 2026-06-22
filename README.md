@@ -105,7 +105,7 @@ Either way, the header status pill shows **"● AI: Enabled"** and both agents r
 The app has no sidebar — the reviewer name field and two status pills live in a header bar at the top of the page:
 
 - **AI status pill** — "● AI: Enabled" / "● AI: Disabled", reflecting whether an `ANTHROPIC_API_KEY` is set (session key, environment variable, or Streamlit secrets). A small **⚙️** icon next to the pill opens a popover for entering your own key for the current session.
-- **Data Source Status pill** — "Data: Live CMS" / "Data: Synthetic fallback" / "Data: Mixed", reflecting whether `rules/data_source_status.py` found the real NCCI/MUE/ICD-10 reference files locally or is serving the small synthetic fallback tables (see TD-27 in `docs/Technical_Debt_Register.md`).
+- **Data Source Status pill** — defaults to "⚪ Data: Not Refreshed" on every fresh page load; nothing is checked or downloaded automatically, so startup stays fast regardless of CMS reference data size. Click the pill to open a popover with a "🔍 Check CMS Data Availability" button — only then does it call `rules/data_source_status.py` and resolve to "🟢 Data: Live CMS" / "🟡 Data: Synthetic fallback" / "🟡 Data: Mixed" (see TD-27 in `docs/Technical_Debt_Register.md`). The result is cached for the rest of the browser session — it won't re-check itself. A "🔄 Refresh Data Status" button appears once checked, useful after updating secrets, deploying new CMS assets, or testing in a different environment.
 - **❔ Getting Started** — an onboarding dialog covering how the system works, AI/demo-mode states, the confidence legend, limitations, and full version history.
 
 Claim entry is a single "Claim Details" flow: pick "Pick a demo scenario" or "Enter manually" — there's no separate Sample Claim/Manual Claim Entry tab split.
@@ -127,12 +127,12 @@ CMS_MUE_URL=https://github.com/<org>/<repo>/releases/download/<tag>/MCR_MUE_Prac
 CMS_ICD10_URL=https://github.com/<org>/<repo>/releases/download/<tag>/icd10cm_order_2026.txt
 ```
 
-All six are optional and independent — set none, some, or all. Behavior:
+All six are optional and independent — set none, some, or all. Checking is **on demand**, not automatic: nothing in this list is touched until you click "Check CMS Data Availability" in the Data pill's popover, so startup time is unaffected by whether any of these are configured. Behavior once checked:
 
-- **None configured** (the default, e.g. on a fresh clone): no download is attempted, nothing changes from today's behavior — local files if present, synthetic fallback otherwise.
-- **Some/all configured, download succeeds**: the file is cached under `tempfile.gettempdir()/denial_copilot_cms_cache/` and used exactly like a local file — the header "Data:" pill shows "🟢 Live CMS" (or "🟡 Mixed" if only some datasets downloaded), and its popover notes "📥 Downloaded from a configured GitHub Release Asset."
+- **None configured**: no download is attempted, nothing changes from today's behavior — local files if present, synthetic fallback otherwise.
+- **Some/all configured, download succeeds**: the file is cached under `tempfile.gettempdir()/denial_copilot_cms_cache/` and used exactly like a local file — the Data pill resolves to "🟢 Live CMS" (or "🟡 Mixed" if only some datasets downloaded), and its popover notes "📥 Downloaded from a configured GitHub Release Asset."
 - **Configured but the download fails** (network error, timeout, bad URL): the failure is caught and logged, nothing crashes, and the app falls back to the local file or synthetic table exactly as if nothing had been configured — the popover notes the attempt and its error instead of silently hiding it.
-- **Caching is per-process, not permanent**: a download is attempted at most once per running process (mirroring the existing audit-DB and ChromaDB self-healing patterns) — a Streamlit Cloud restart/redeploy/sleep-wake re-attempts it lazily on first access, it does not "remember" across restarts.
+- **Caching is per-process and per-session**: once checked, a download is attempted at most once per running process (mirroring the existing audit-DB and ChromaDB self-healing patterns), and the resolved status is cached in your browser session so the app doesn't re-check itself. Click "🔄 Refresh Data Status" in the same popover after updating secrets, deploying new CMS assets, or testing in a different environment — that re-attempts the check (and any configured download) from scratch.
 
 Asset URLs must point at actual tagged GitHub Release assets (`.../releases/download/<tag>/<file>`), not ephemeral `github.com/user-attachments/...` comment-attachment links, which aren't guaranteed to remain stable. No URL is hardcoded anywhere in the codebase — the feature is entirely opt-in via configuration, and no secret/credential is required (these are public file URLs, not API keys).
 
