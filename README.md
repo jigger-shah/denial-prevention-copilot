@@ -35,9 +35,10 @@ The MVP includes:
 - Self-healing audit database initialization
 - Graceful ChromaDB fallback behavior
 - Live CMS rule-layer support using maintainer-managed GitHub Release Assets
-- Expanded automated test coverage (549+ passing tests)
+- Session-scoped Anthropic API key entry via the UI (no `.env` required for end users)
+- Expanded automated test coverage (564+ passing tests)
 
-Engineering release history continues internally through v1.9.x releases, which represent deployment, reliability, testing, and operational hardening improvements beyond the original MVP scope. The public V1.0 MVP designation corresponds to engineering releases v1.8a (UI polish and first-time UX), v1.8b (citation transparency / Supporting Policies Reviewed), and v1.9.x (Streamlit Cloud deployment readiness, audit-schema self-healing, ChromaDB graceful fallback, and manual-claim AI execution parity). The in-app "Getting Started" → "What Changed" notes show only the public-facing V1.0 MVP summary; full engineering version history — v1.0 through v1.9.x — is preserved in `docs/Roadmap.md`. 523 tests passing. Default AI model: Claude Sonnet 4.6 (override with `ANTHROPIC_MODEL`). See `docs/Technical_Debt_Register.md` for the full TD-24 calibration history and the Haiku/Sonnet/Opus model comparison behind that choice.
+Engineering release history continues internally through v1.11.x releases, which represent deployment, reliability, testing, and operational hardening improvements beyond the original MVP scope. The public V1.0 MVP designation corresponds to engineering releases v1.8a (UI polish and first-time UX), v1.8b (citation transparency / Supporting Policies Reviewed), v1.9.x (Streamlit Cloud deployment readiness, audit-schema self-healing, ChromaDB graceful fallback, and manual-claim AI execution parity), v1.11-live-cms (optional Live CMS rule-layer data via GitHub Release Assets), v1.11.1 (CMS/Chroma policy retrieval enhancement deferred — tracked as TD-28), and v1.11.2 (session-scoped Anthropic API key via the UI gear icon). The in-app "Getting Started" → "What Changed" notes show only the public-facing V1.0 MVP summary; full engineering version history — v1.0 through v1.11.2 — is preserved in `docs/Roadmap.md`. 564 tests passing. Default AI model: Claude Sonnet 4.6 (override with `ANTHROPIC_MODEL`). See `docs/Technical_Debt_Register.md` for the full TD-24 calibration history and the Haiku/Sonnet/Opus model comparison behind that choice.
 
 ## Demonstrated Capabilities
 
