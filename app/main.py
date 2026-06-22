@@ -1232,7 +1232,7 @@ def _render_header() -> str:
         "div[class*='st-key-header_controls_row'] div[data-testid='stHorizontalBlock']"
         "{ align-items: flex-end; }"
         "div[class*='st-key-ai_gear_col']"
-        "{ position: relative; left: -200px; }"
+        "{ position: relative; left: 60px; }"
         "</style>",
         unsafe_allow_html=True,
     )
