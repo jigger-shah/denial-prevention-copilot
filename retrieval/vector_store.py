@@ -25,9 +25,25 @@ each get a fully isolated ChromaDB instance with no shared state.
 
 Embedding model: ChromaDB's default built-in embedding function
 (sentence-transformers all-MiniLM-L6-v2) for zero-config local use.
+
+chromadb is imported defensively (broad except, not just ImportError) because
+its import chain has been observed to fail with TypeError on some hosted
+runtimes (chromadb -> opentelemetry -> a protobuf version mismatch raising
+TypeError deep in a generated _pb2 module, not an ImportError). This module
+must stay importable either way, since agents/coverage_validation.py and
+agents/coding_validation.py import VectorStore at module load time, ahead of
+any retrieval logic — if that import raised, the whole app would fail to
+start before reaching the existing vector-store-then-JSON-fallback retrieval
+path (agents already catch construction failures there and fall back to the
+JSON policy corpus; see _retrieve_from_vector_store() in both agent modules).
 """
 
-import chromadb
+try:
+    import chromadb
+    CHROMADB_IMPORT_ERROR: Exception | None = None
+except Exception as exc:  # noqa: BLE001 - intentionally broad, see module docstring
+    chromadb = None
+    CHROMADB_IMPORT_ERROR = exc
 
 DEFAULT_COLLECTION_NAME = "coverage_policies"
 
@@ -36,6 +52,10 @@ class VectorStore:
     """A persistent ChromaDB-backed store of embedded LCD/NCD policy chunks."""
 
     def __init__(self, persist_directory, collection_name: str = DEFAULT_COLLECTION_NAME):
+        if chromadb is None:
+            raise RuntimeError(
+                "ChromaDB unavailable; falling back to JSON policy corpus"
+            ) from CHROMADB_IMPORT_ERROR
         self._client = chromadb.PersistentClient(path=str(persist_directory))
         self._collection = self._client.get_or_create_collection(collection_name)
 

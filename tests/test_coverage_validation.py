@@ -440,6 +440,22 @@ def test_json_fallback_used_when_vector_store_raises(mock_vector_store):
     assert policies  # JSON corpus has a match for Z00.00
 
 
+def test_json_fallback_used_when_vector_store_construction_raises(monkeypatch):
+    """_get_vector_store() itself raising (e.g. ChromaDB failed to import on a
+    hosted runtime, so VectorStore.__init__ raises RuntimeError) must fall
+    back to JSON, never propagate and never block the rest of the agent."""
+    from agents.coverage_validation import _retrieve_policies
+
+    def _raise_chromadb_unavailable():
+        raise RuntimeError("ChromaDB unavailable; falling back to JSON policy corpus")
+
+    monkeypatch.setattr("agents.coverage_validation._get_vector_store", _raise_chromadb_unavailable)
+
+    policies = _retrieve_policies(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+
+    assert policies  # JSON corpus has a match for Z00.00
+
+
 def test_no_policy_from_vector_or_json_returns_empty_list(mock_vector_store):
     """Neither source has anything for these codes -> []."""
     from agents.coverage_validation import _retrieve_policies

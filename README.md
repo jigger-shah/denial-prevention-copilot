@@ -50,6 +50,8 @@ streamlit run app/main.py
 
 The app runs fully on a fresh clone with no `ANTHROPIC_API_KEY` — no setup beyond `pip install` is required to launch it or to use the deterministic rule-engine review (NCCI, MUE, NPI, code validity). See **AI features** below for what changes with a key.
 
+`runtime.txt` pins Python 3.13 for Streamlit Cloud compatibility — newer Python runtimes have been observed to break `chromadb`'s `opentelemetry`/`protobuf` import chain. ChromaDB itself is optional at runtime: `retrieval/vector_store.py` imports it defensively, and if the import fails for any reason, the Coverage and Coding Validation agents transparently fall back to the curated JSON policy corpus (`retrieval/policy_repository.py`) — the same fallback path already used whenever the vector store is empty or unseeded. The app starts and serves findings either way; only the retrieval source changes.
+
 ## AI features (optional, requires your own API key)
 
 The Coverage Validation and Coding Validation agents call the Anthropic API and need your own `ANTHROPIC_API_KEY`. Without a key:

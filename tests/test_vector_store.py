@@ -7,6 +7,7 @@ shape produced by retrieval/chunking.py:chunk_document().
 
 import pytest
 
+import retrieval.vector_store as vector_store_module
 from retrieval.vector_store import VectorStore
 
 
@@ -145,3 +146,49 @@ def test_indexing_chunks_from_multiple_documents(store):
     ]
     assert store.index(chunks) == 3
     assert store.count() == 3
+
+
+# ---------------------------------------------------------------------------
+# Graceful degradation when chromadb fails to import (e.g. a hosted runtime
+# where the chromadb -> opentelemetry -> protobuf import chain raises
+# TypeError rather than ImportError — see retrieval/vector_store.py module
+# docstring). The module itself must always stay importable; only
+# constructing a VectorStore should fail, and only with a clear RuntimeError.
+# ---------------------------------------------------------------------------
+
+def test_module_is_importable_even_when_chromadb_failed_to_import():
+    """The try/except around `import chromadb` must catch broad Exception,
+    not just ImportError, since the observed hosted failure is a TypeError
+    raised deep in a generated protobuf module."""
+    assert hasattr(vector_store_module, "CHROMADB_IMPORT_ERROR")
+
+
+def test_vector_store_raises_clear_runtime_error_when_chromadb_unavailable(monkeypatch, tmp_path):
+    monkeypatch.setattr(vector_store_module, "chromadb", None)
+    monkeypatch.setattr(vector_store_module, "CHROMADB_IMPORT_ERROR", TypeError("simulated protobuf failure"))
+
+    with pytest.raises(RuntimeError, match="ChromaDB unavailable"):
+        VectorStore(persist_directory=tmp_path)
+
+
+def test_vector_store_runtime_error_chains_the_original_import_failure(monkeypatch, tmp_path):
+    """The original import failure must be preserved via exception chaining
+    (`raise ... from CHROMADB_IMPORT_ERROR`) so it's still visible in logs/tracebacks."""
+    original = TypeError("simulated protobuf failure")
+    monkeypatch.setattr(vector_store_module, "chromadb", None)
+    monkeypatch.setattr(vector_store_module, "CHROMADB_IMPORT_ERROR", original)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        VectorStore(persist_directory=tmp_path)
+
+    assert exc_info.value.__cause__ is original
+
+
+def test_vector_store_still_works_normally_when_chromadb_is_available(tmp_path):
+    """Sanity check: the defensive import doesn't change behavior in the
+    normal case where chromadb imports successfully."""
+    assert vector_store_module.chromadb is not None
+    assert vector_store_module.CHROMADB_IMPORT_ERROR is None
+
+    store = VectorStore(persist_directory=tmp_path)
+    assert store.count() == 0
