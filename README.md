@@ -8,21 +8,32 @@ Built on free public data: NPPES NPI Registry, CMS Coverage API (NCDs/LCDs), NCC
 
 > **Not for clinical or billing use.** This is a synthetic-data prototype demonstrating an architecture pattern, not production healthcare software. It is not HIPAA certified and has not been validated against real claims, real payer adjudication, or real patient data. Do not use it to make actual coverage, coding, or billing decisions.
 
-**Current Product Release: MVP (V1)** — implemented through v1.9. The MVP brings together the deterministic rule engine, Coverage Validation Agent, Coding Validation Agent, and Unified Risk Assessment behind a human Accept/Override workflow with a full audit trail, every AI finding backed by a cited LCD/NCD source. The app is deployment-ready (Streamlit Cloud secrets compatibility, self-healing audit DB) and fresh-clone validated, with 500 tests passing. In short, this release includes:
+## Current Public Release
 
-- Deterministic Rule Engine (NPI, NCCI, MUE, ICD-10, HCPCS, modifier, diagnosis-procedure checks)
+**V1.0 MVP**
+
+Denial Prevention Copilot has reached MVP status and is publicly released.
+
+The MVP includes:
+
+- Deterministic claim validation
+- NPI validation
+- NCCI bundling checks
+- MUE validation
+- ICD-10 validation
+- HCPCS validation
+- Modifier validation
 - Coverage Validation Agent
 - Coding Validation Agent
-- Unified Risk Assessment
-- Citation Grounding (no citation → no finding)
-- Supporting Policies Reviewed (every retrieved policy, not just the cited one)
-- Human Accept/Override Review Workflow
-- Append-Only Audit Trail
-- Deployment Ready (Streamlit Cloud secrets + temp-dir audit DB)
-- Fresh Clone Validated
-- 500 Tests Passing
+- Citation grounding
+- Supporting Policies Reviewed
+- Risk scoring
+- Human review workflow
+- Audit trail
+- Manual claim review
+- Streamlit Cloud deployment support
 
-MVP (V1) was implemented across three engineering releases — v1.8a (UI polish and first-time UX), v1.8b (citation transparency / Supporting Policies Reviewed), and v1.9 (Streamlit Cloud deployment readiness, including the audit-schema self-healing fix). The in-app "Getting Started" → "What Changed" notes now show only the public-facing MVP (V1) summary; full engineering version history — v1.0 through v1.9 — is preserved in `docs/Roadmap.md`. Default AI model: Claude Sonnet 4.6 (override with `ANTHROPIC_MODEL`). See `docs/Technical_Debt_Register.md` for the full TD-24 calibration history and the Haiku/Sonnet/Opus model comparison behind that choice.
+Engineering release history continues internally through v1.9.x releases, which represent deployment, reliability, testing, and operational hardening improvements beyond the original MVP scope. The public V1.0 MVP designation corresponds to engineering releases v1.8a (UI polish and first-time UX), v1.8b (citation transparency / Supporting Policies Reviewed), and v1.9.x (Streamlit Cloud deployment readiness, audit-schema self-healing, ChromaDB graceful fallback, and manual-claim AI execution parity). The in-app "Getting Started" → "What Changed" notes show only the public-facing V1.0 MVP summary; full engineering version history — v1.0 through v1.9.x — is preserved in `docs/Roadmap.md`. 523 tests passing. Default AI model: Claude Sonnet 4.6 (override with `ANTHROPIC_MODEL`). See `docs/Technical_Debt_Register.md` for the full TD-24 calibration history and the Haiku/Sonnet/Opus model comparison behind that choice.
 
 ## Screenshots
 

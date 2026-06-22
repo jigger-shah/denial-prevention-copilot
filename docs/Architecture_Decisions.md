@@ -3,6 +3,8 @@
 
 This document records the major architecture decisions made during development, the reasoning behind each, the alternatives considered, and the implications for future phases. Where decisions had lasting structural consequences, the ADR (Architecture Decision Record) format is used.
 
+> Architecture documented in this repository represents the architecture of the **V1.0 MVP** release.
+
 > **As of MVP V1 (implemented through v1.9):** the architecture described by the ADRs below resolves to one end-to-end flow:
 >
 > ```

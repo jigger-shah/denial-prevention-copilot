@@ -5,6 +5,8 @@
 
 **Roadmap philosophy:** Each phase builds on the previous one without breaking it. Governance infrastructure is built before the AI it governs. Deterministic correctness is established before generative reasoning is added. Every phase ships working, testable software.
 
+> **Current Public Product Release:** V1.0 MVP. Engineering release numbering continues independently below for implementation milestones and maintenance releases (v1.0 through v1.9.x) — see `README.md`'s "Current Public Release" section and `docs/Repository_Status_Report.md`'s Public Release Milestone update for how the two numbering tracks map to each other.
+
 ---
 
 ## Phase 0 — Environment Setup ✅ Complete
