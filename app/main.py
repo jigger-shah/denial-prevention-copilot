@@ -113,13 +113,13 @@ _RECOMMENDED_ACTION = {
 # Cached resources
 # ---------------------------------------------------------------------------
 
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def load_claims() -> list[dict]:
     with open(CLAIMS_FILE) as f:
         return json.load(f)
 
 
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def load_cached_ai_demo_artifacts() -> dict:
     """
     Pre-generated AI agent findings (data/synthetic/cached_ai_demo_artifacts.json),
@@ -153,7 +153,7 @@ def _cached_ai_findings_for(claim_id: str) -> list[Finding] | None:
     return findings
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def get_repo() -> AuditRepository:
     repo = AuditRepository()
     repo.initialize_database()
@@ -192,7 +192,7 @@ def _source_badge(finding) -> str:
     )
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def _data_source_summary() -> dict:
     """Wraps rules.data_source_status.get_data_source_status() with a
     process-lifetime cache. The underlying loaders parse the full CMS
@@ -1165,7 +1165,24 @@ def _render_session_api_key_popover() -> None:
 
 def _render_header() -> str:
     """Renders the title/badge row and the reviewer/AI/data-source/help controls
-    row. Returns the reviewer name. Replaces the old st.sidebar entirely."""
+    row. Returns the reviewer name. Replaces the old st.sidebar entirely.
+
+    A loading placeholder covers the brief window where rules.data_source_status
+    is first computed (can take a while on a machine with the full local CMS
+    files present, or while an optional CMS asset download runs) — without it,
+    Streamlit's top-to-bottom rendering would show the reviewer field/AI pill/
+    gear icon before the Data Source pill and help button, a half-finished-
+    looking header. The placeholder is cleared before anything below it renders,
+    so the header always appears as one complete unit, never partially.
+    """
+    loading_placeholder = st.empty()
+    with loading_placeholder.container():
+        st.markdown("### 🏥 Denial Prevention Copilot")
+        with st.spinner("Initializing Denial Prevention Copilot…"):
+            st.caption("Checking CMS data availability and preparing the review workspace.")
+            summary = _data_source_summary()
+    loading_placeholder.empty()
+
     col_title, col_badge = st.columns([4, 2])
     with col_title:
         st.markdown("## 🏥 Denial Prevention Copilot")
@@ -1205,7 +1222,6 @@ def _render_header() -> str:
             with st.container(key="ai_gear_col"):
                 _render_session_api_key_popover()
         with c_data:
-            summary = _data_source_summary()
             label, _ = _DATA_STATUS_LABELS[summary["overall"]]
             with st.popover(label):
                 st.caption(
