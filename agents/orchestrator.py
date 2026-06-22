@@ -42,7 +42,7 @@ _CODING_CHECK_LABEL = "Coding validation — LLM coding defensibility review"
 
 
 def _ai_enabled() -> bool:
-    """True iff ANTHROPIC_API_KEY is set (env var or Streamlit secrets). No Anthropic client is constructed otherwise."""
+    """True iff ANTHROPIC_API_KEY is set (a UI session key, env var, or Streamlit secrets — see agents/secrets.py for resolution order). No Anthropic client is constructed otherwise."""
     return bool(get_secret("ANTHROPIC_API_KEY"))
 
 

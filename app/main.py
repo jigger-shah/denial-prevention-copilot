@@ -550,7 +550,8 @@ def _render_ai_section(claim, claim_id: str, reviewer_name: str, repo: AuditRepo
         st.divider()
         st.warning(
             "⚠️ **AI Agents Disabled**\n\n"
-            "Provide `ANTHROPIC_API_KEY` to enable the Coverage and Coding agents.\n\n"
+            "Use the ⚙️ icon next to the AI status pill to enable AI for this browser "
+            "session, or ask the app owner to configure an API key.\n\n"
             "Deterministic rule-engine review remains available."
         )
         return
@@ -1125,6 +1126,42 @@ _DATA_STATUS_LABELS = {
     "mixed": ("🟡 Data: Mixed", "Mixed"),
 }
 
+_SESSION_API_KEY_NAME = "ANTHROPIC_API_KEY"
+
+
+def _render_session_api_key_popover() -> None:
+    """
+    Small gear-icon popover letting a user provide their own Anthropic API key
+    for this browser session only. The key is stored solely in
+    st.session_state (never written to disk, never logged, never sent to the
+    audit DB) under the same name agents.secrets.get_secret() checks first —
+    see that module for the full resolution order. Closing or refreshing the
+    browser tab ends the session and the key with it.
+    """
+    with st.popover("⚙️", help="API key settings"):
+        st.caption(
+            "Live Coverage and Coding agents require an Anthropic API key. "
+            "You may provide your own key for this browser session. The key "
+            "is not stored or persisted."
+        )
+        session_key_input = st.text_input(
+            "Anthropic API Key",
+            type="password",
+            key="session_api_key_input",
+            placeholder="sk-ant-...",
+        )
+        col_enable, col_clear = st.columns(2)
+        with col_enable:
+            if st.button("Enable AI", key="enable_session_api_key_btn", use_container_width=True):
+                if session_key_input:
+                    st.session_state[_SESSION_API_KEY_NAME] = session_key_input
+                    st.rerun()
+        with col_clear:
+            if st.button("Clear Key", key="clear_session_api_key_btn", use_container_width=True):
+                st.session_state.pop(_SESSION_API_KEY_NAME, None)
+                st.rerun()
+        st.caption("Used only for this browser session. Not stored or persisted.")
+
 
 def _render_header() -> str:
     """Renders the title/badge row and the reviewer/AI/data-source/help controls
@@ -1142,7 +1179,7 @@ def _render_header() -> str:
         )
 
     with st.container(key="header_controls_row"):
-        c_reviewer, c_ai, c_data, c_help = st.columns([2.2, 1.3, 1.6, 0.5])
+        c_reviewer, c_ai, c_gear, c_data, c_help = st.columns([2.2, 0.85, 0.45, 1.6, 0.5])
         with c_reviewer:
             reviewer_name = st.text_input(
                 "Reviewer",
@@ -1164,6 +1201,9 @@ def _render_header() -> str:
                     f'</div>',
                     unsafe_allow_html=True,
                 )
+        with c_gear:
+            with st.container(key="ai_gear_col"):
+                _render_session_api_key_popover()
         with c_data:
             summary = _data_source_summary()
             label, _ = _DATA_STATUS_LABELS[summary["overall"]]
@@ -1191,15 +1231,11 @@ def _render_header() -> str:
         "<style>"
         "div[class*='st-key-header_controls_row'] div[data-testid='stHorizontalBlock']"
         "{ align-items: flex-end; }"
+        "div[class*='st-key-ai_gear_col']"
+        "{ position: relative; left: -200px; }"
         "</style>",
         unsafe_allow_html=True,
     )
-
-    if not _AI_ENABLED:
-        st.caption(
-            "AI Agents are disabled — add `ANTHROPIC_API_KEY` to your `.env` file to enable "
-            "live Coverage and Coding agents. Deterministic rule-engine review remains fully available."
-        )
 
     return reviewer_name
 
@@ -1227,8 +1263,10 @@ def _getting_started_dialog() -> None:
 
     st.markdown("#### AI status you'll see in this app")
     st.markdown(
-        "- **● AI: Enabled** — your `ANTHROPIC_API_KEY` is set; Coverage/Coding agents run live.\n"
-        "- **● AI: Disabled** — no key set; only the deterministic Rule Engine runs.\n"
+        "- **● AI: Enabled** — an API key is configured (by the app owner, or by you via "
+        "the ⚙️ icon next to the pill for this browser session); Coverage/Coding agents run live.\n"
+        "- **● AI: Disabled** — no key configured; only the deterministic Rule Engine runs. "
+        "Click the ⚙️ icon to add your own key for this session.\n"
         "- **📋 Pre-generated demonstration results** — shown per-claim for select demo "
         "scenarios when AI is disabled, so you can preview real agent output without an API call."
     )

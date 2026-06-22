@@ -1,25 +1,34 @@
 """
 Secret/config resolution for ANTHROPIC_API_KEY and ANTHROPIC_MODEL.
 
-Local development reads these from the OS environment (populated by
-python-dotenv's load_dotenv() from a .env file, or a real env var). Streamlit
-Cloud exposes secrets via st.secrets instead. get_secret() checks the
-environment variable first — so local behavior is completely unchanged — and
-falls back to st.secrets only if the environment variable isn't set, which is
-the Streamlit Cloud case.
+Resolution order: a per-browser-session key the user entered in the app UI
+(st.session_state), then the OS environment (populated by python-dotenv's
+load_dotenv() from a .env file, or a real env var), then Streamlit Cloud's
+st.secrets, then default. The env-then-secrets order is unchanged from
+before the session-key feature existed — local and hosted app-owner-key
+behavior is identical either way. The session-state check is new (app/main.py's
+gear-icon popover) and is checked first so a user-supplied session key
+overrides an app-owner key for the rest of that browser session.
 
-No agent or rule-layer logic depends on this module having Streamlit
-installed in a context where it can be imported safely: the st.secrets access
-is wrapped in try/except because st.secrets raises if no
-.streamlit/secrets.toml exists at all, which is the normal state for local
-development and must never crash a local run.
+The session-state and st.secrets accesses are both wrapped in try/except:
+st.session_state/st.secrets raise outside a running Streamlit script (e.g.
+in tests or a plain CLI run, or with no .streamlit/secrets.toml present,
+the normal state for local development) — none of that may ever crash a
+local run or the test suite.
 """
 
 import os
 
 
 def get_secret(name: str, default: str = "") -> str:
-    """Resolve a secret: OS environment variable, then Streamlit secrets, then default."""
+    """Resolve a secret: session key, then OS environment variable, then Streamlit secrets, then default."""
+    try:
+        import streamlit as st
+        val = st.session_state.get(name)
+        if val:
+            return val
+    except Exception:
+        pass
     val = os.getenv(name)
     if val:
         return val

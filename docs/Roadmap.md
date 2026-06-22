@@ -772,6 +772,35 @@ See `docs/Technical_Debt_Register.md` TD-28's acceptance criteria — app boots 
 
 ---
 
+## Phase 13 — Session-Scoped Anthropic API Key (UI) ✅ Complete
+
+**Status:** ✅ Complete
+**Estimated scope:** 1 session
+
+### Objectives
+Let any user — not just the app owner — provide their own `ANTHROPIC_API_KEY` for live AI, scoped to their browser session only, with no change to the AI pill's wording and no persistence anywhere.
+
+### Deliverables
+- ✅ `agents/secrets.py:get_secret()` resolution order extended to check `st.session_state` first, before the existing env-var-then-`st.secrets` order (unchanged for app-owner keys). Wrapped in try/except so a non-Streamlit context (CLI, tests) never crashes.
+- ✅ `app/main.py` — small **⚙️** gear-icon popover placed immediately next to the AI status pill (own narrow header column + a `position: relative; left: -200px` CSS nudge via the same `st-key-`-targeted injection pattern already used elsewhere in the header) containing a password-masked key input, "Enable AI" / "Clear Key" buttons, and brief non-persistence helper text. The AI pill itself still shows only "AI: Enabled" / "AI: Disabled," unchanged.
+- ✅ The old `.env`-instructing banner in the main UI was removed entirely (not converted to a tooltip); the per-claim "AI Agents Disabled" warning and the Getting Started dialog's AI-status bullets were reworded to point at the gear icon instead.
+- ✅ `agents/orchestrator.py`, `agents/coverage_validation.py`, `agents/coding_validation.py` needed **no changes** — all three already called `get_secret("ANTHROPIC_API_KEY")` for their own gate check, so extending `get_secret()` alone made them session-aware.
+- ✅ 15 new tests: `tests/test_secrets.py` (6 new + 3 existing mocks fixed for a `MagicMock` truthiness gap the new session check exposed), `tests/test_session_api_key.py` (new, 9 tests — full enable/disable/clear matrix, no-Anthropic-client-when-no-key, session key never persisted to a saved `AuditDecision`), `tests/test_app_ai_disabled.py` (1 updated, 1 new asserting no `.env` text anywhere in the main UI).
+- ✅ Manually validated via a real `AppTest` click-through (not just unit tests): no-key boot → "AI: Disabled" → entered a session key → clicked "Enable AI" → "AI: Enabled," no exception → clicked "Clear Key" → reverted to "AI: Disabled," no exception.
+- ✅ README's "AI features" section now documents both paths (app-owner env/secrets vs. per-session UI key) with the non-persistence guarantees spelled out.
+
+### Dependencies
+- None beyond the existing `agents/secrets.py`/`agents/orchestrator.py` AI-gating already in place since v1.6 (TD-12).
+
+### Success Criteria
+- No key anywhere → AI disabled, no Anthropic client constructed
+- Session key → AI enabled, even with no app-owner key configured
+- Clearing the session key → reverts to the app-owner key's state (enabled if one exists, disabled if not) — never both-ways-disables an app-owner key
+- Session key never appears in any saved audit decision, log line, or on-disk file
+- Full test suite passes
+
+---
+
 ==================================================
 ## MVP V1 ACHIEVED
 ==================================================

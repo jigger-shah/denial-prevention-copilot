@@ -80,28 +80,30 @@ The app runs fully on a fresh clone with no `ANTHROPIC_API_KEY` — no setup bey
 
 `runtime.txt` pins Python 3.13 for Streamlit Cloud compatibility — newer Python runtimes have been observed to break `chromadb`'s `opentelemetry`/`protobuf` import chain. ChromaDB itself is optional at runtime: `retrieval/vector_store.py` imports it defensively, and if the import fails for any reason, the Coverage and Coding Validation agents transparently fall back to the curated JSON policy corpus (`retrieval/policy_repository.py`) — the same fallback path already used whenever the vector store is empty or unseeded. The app starts and serves findings either way; only the retrieval source changes.
 
-## AI features (optional, requires your own API key)
+## AI features (optional, requires an API key)
 
-The Coverage Validation and Coding Validation agents call the Anthropic API and need your own `ANTHROPIC_API_KEY`. Without a key:
+The Coverage Validation and Coding Validation agents call the Anthropic API and need an `ANTHROPIC_API_KEY`. Without one:
 
 - The header status pill shows **"● AI: Disabled"**, and the in-page AI sections show **"⚠ AI Agents Disabled"** — the app never attempts an Anthropic call and never constructs an Anthropic client.
 - The deterministic rule-engine review (NCCI, MUE, NPI, code validity) remains fully available.
 - Three designated sample claims display **pre-generated, clearly labeled** ("📋 Pre-generated demonstration results") AI findings captured from a real run, so you can preview representative agent output without making a live API call. See `docs/Demo_Script.md`.
 
-To enable live AI analysis:
+There are two ways to enable live AI:
 
-```bash
-cp .env.example .env
-# edit .env and set ANTHROPIC_API_KEY=sk-ant-...
-```
+1. **App owner — environment variable or Streamlit secrets** (persistent, for everyone using this deployment):
+   ```bash
+   cp .env.example .env
+   # edit .env and set ANTHROPIC_API_KEY=sk-ant-...
+   ```
+2. **Any user — session key via the UI** (temporary, for just your browser session): click the **⚙️** icon next to the AI status pill, paste your own key, and click "Enable AI." The key is held only in Streamlit's session state — never written to disk, never logged, never stored in the audit trail — and disappears when you click "Clear Key" or the browser session ends. A session key takes priority over an app-owner key for the rest of that session.
 
-Once set, the header status pill shows **"● AI: Enabled"** and both agents run as part of "Run Full Review."
+Either way, the header status pill shows **"● AI: Enabled"** and both agents run as part of "Run Full Review."
 
 ## UI overview (v1.8a/v1.8b)
 
 The app has no sidebar — the reviewer name field and two status pills live in a header bar at the top of the page:
 
-- **AI status pill** — "● AI: Enabled" / "● AI: Disabled", reflecting whether `ANTHROPIC_API_KEY` is set.
+- **AI status pill** — "● AI: Enabled" / "● AI: Disabled", reflecting whether an `ANTHROPIC_API_KEY` is set (session key, environment variable, or Streamlit secrets). A small **⚙️** icon next to the pill opens a popover for entering your own key for the current session.
 - **Data Source Status pill** — "Data: Live CMS" / "Data: Synthetic fallback" / "Data: Mixed", reflecting whether `rules/data_source_status.py` found the real NCCI/MUE/ICD-10 reference files locally or is serving the small synthetic fallback tables (see TD-27 in `docs/Technical_Debt_Register.md`).
 - **❔ Getting Started** — an onboarding dialog covering how the system works, AI/demo-mode states, the confidence legend, limitations, and full version history.
 
