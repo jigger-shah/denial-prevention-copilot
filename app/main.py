@@ -210,27 +210,30 @@ def _data_source_summary() -> dict:
     return {"overall": overall, "datasets": status}
 
 
-def _risk_why_lines(findings: list) -> list[str]:
-    """Plain-English severity breakdown for the risk banner's 'Why' section."""
-    counts: dict[str, int] = {}
+def _severity_counts(findings: list) -> dict[str, int]:
+    """HIGH/MEDIUM/LOW counts for the risk banner's severity summary — same
+    counting logic as before, just no longer rendered as prose bullets."""
+    counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
     for f in findings:
-        counts[f.severity] = counts.get(f.severity, 0) + 1
-    lines = []
-    for sev in ("HIGH", "MEDIUM", "LOW"):
-        if counts.get(sev):
-            label = "Severity finding" if counts[sev] == 1 else "Severity findings"
-            lines.append(f"{counts[sev]} {sev.title()} {label}")
-    return lines
+        if f.severity in counts:
+            counts[f.severity] += 1
+    return counts
 
 
 def _render_risk_explanation(risk_score: str, findings: list) -> None:
-    """'Why' severity breakdown + 'Recommended Action' shown under the risk banner."""
-    why_lines = _risk_why_lines(findings)
-    if why_lines:
-        st.markdown("**Why:**")
-        for line in why_lines:
-            st.markdown(f"- {line}")
-    st.markdown(f"**Recommended Action:** {_RECOMMENDED_ACTION.get(risk_score, 'Review findings below.')}")
+    """Compact High/Medium/Low severity summary + promoted Recommended Action
+    callout, shown directly under the risk banner. Presentation only — the
+    underlying severity counts and recommendation text are unchanged."""
+    counts = _severity_counts(findings)
+    col_high, col_medium, col_low = st.columns(3)
+    col_high.metric("High", counts["HIGH"])
+    col_medium.metric("Medium", counts["MEDIUM"])
+    col_low.metric("Low", counts["LOW"])
+
+    st.info(
+        f"🛠 **Recommended Action**\n\n"
+        f"{_RECOMMENDED_ACTION.get(risk_score, 'Review findings below.')}"
+    )
 
 
 def _citation_is_json_fallback(citation, retrieved_policies: list[dict] | None) -> bool:
@@ -454,8 +457,17 @@ def _save_controls(
             st.error(str(exc))
 
 
+def _render_checks_expander(checks: list[str]) -> None:
+    """Collapsed-by-default list of which validation checks ran — same checks
+    data as before, just moved out of an always-visible caption to reduce
+    visual noise. No change to what's tracked or how it's computed."""
+    with st.expander(f"Validation Checks Performed ({len(checks)})"):
+        for check in checks:
+            st.markdown(f"✓ {check}")
+
+
 def _render_checks_summary(findings: list) -> None:
-    """Always-visible summary of which rule checks ran (and which were skipped)."""
+    """Always-visible NPI short-circuit warning (if any) + collapsed checks-run detail."""
     npi_short_circuited = any(
         f.rule == "npi_invalid" and f.severity == "HIGH" for f in findings
     )
@@ -464,9 +476,9 @@ def _render_checks_summary(findings: list) -> None:
             "⚡ **NPI short-circuit:** invalid NPI stopped evaluation. "
             "Fix the NPI to run NCCI, MUE, and code-validity checks."
         )
-        st.caption("Checks run: " + CHECKS_RUN[0])
+        _render_checks_expander([CHECKS_RUN[0]])
     else:
-        st.caption("Checks run: " + " · ".join(CHECKS_RUN))
+        _render_checks_expander(CHECKS_RUN)
 
 
 def _run_full_review_safely(claim):
@@ -521,7 +533,7 @@ def _render_full_review_results(
             "⚡ **NPI short-circuit:** invalid NPI stopped evaluation before "
             "NCCI, MUE, code-validity, and coverage analysis ran."
         )
-    st.caption("Checks run: " + " · ".join(risk_assessment.checks_run))
+    _render_checks_expander(risk_assessment.checks_run)
 
     if risk_assessment.escalation_required:
         st.warning(
@@ -1167,21 +1179,20 @@ def _render_header() -> str:
     """Renders the title/badge row and the reviewer/AI/data-source/help controls
     row. Returns the reviewer name. Replaces the old st.sidebar entirely.
 
-    A loading placeholder covers the brief window where rules.data_source_status
-    is first computed (can take a while on a machine with the full local CMS
-    files present, or while an optional CMS asset download runs) — without it,
-    Streamlit's top-to-bottom rendering would show the reviewer field/AI pill/
-    gear icon before the Data Source pill and help button, a half-finished-
-    looking header. The placeholder is cleared before anything below it renders,
-    so the header always appears as one complete unit, never partially.
+    The Data Source status is the one piece of this header that can be slow
+    to compute (rules.data_source_status parses the full CMS reference files
+    when present locally, or attempts an optional CMS asset download) — so it
+    must never block the rest of the header from rendering. The title,
+    reviewer field, AI pill, gear icon, and help button all render
+    unconditionally and immediately; the Data pill shows a "Checking…"
+    placeholder on first render, then this function triggers exactly one
+    st.rerun() after computing the real status (cache_resource-backed, so
+    every subsequent render — including the one right after that rerun — is
+    instant) to swap the placeholder for the resolved "Live CMS"/"Synthetic
+    fallback"/"Mixed" pill.
     """
-    loading_placeholder = st.empty()
-    with loading_placeholder.container():
-        st.markdown("### 🏥 Denial Prevention Copilot")
-        with st.spinner("Initializing Denial Prevention Copilot…"):
-            st.caption("Checking CMS data availability and preparing the review workspace.")
-            summary = _data_source_summary()
-    loading_placeholder.empty()
+    data_source_ready = st.session_state.get("_data_source_ready", False)
+    summary = st.session_state.get("_data_source_summary_cache") if data_source_ready else None
 
     col_title, col_badge = st.columns([4, 2])
     with col_title:
@@ -1222,23 +1233,31 @@ def _render_header() -> str:
             with st.container(key="ai_gear_col"):
                 _render_session_api_key_popover()
         with c_data:
-            label, _ = _DATA_STATUS_LABELS[summary["overall"]]
-            with st.popover(label):
-                st.caption(
-                    "Reference data backing the deterministic rule layer. Synthetic "
-                    "fallback tables are curated to behave correctly for the demo "
-                    "scenarios — they are smaller, not less accurate for this app."
+            if summary is None:
+                st.markdown(
+                    f'<div style="margin-bottom:25px;">'
+                    f'{_pill("🔄 Data: Checking…", "#6b7280", font_size="0.92rem", padding="5px 12px")}'
+                    f'</div>',
+                    unsafe_allow_html=True,
                 )
-                for name, info in summary["datasets"].items():
-                    state = "🟢 file-backed" if info["status"] == "file_backed" else "🟡 synthetic fallback"
-                    st.markdown(f"**{name.upper()}** — {state}")
-                    if info.get("version"):
-                        st.caption(f"Version: {info['version']}" + (f" · effective {info['effective_date']}" if info.get("effective_date") else ""))
-                    source = info.get("source")
-                    if source == "downloaded":
-                        st.caption("📥 Downloaded from a configured GitHub Release Asset.")
-                    elif info.get("download_attempted") and info.get("download_error"):
-                        st.caption(f"⚠️ Download attempted but failed ({info['download_error']}) — using fallback.")
+            else:
+                label, _ = _DATA_STATUS_LABELS[summary["overall"]]
+                with st.popover(label):
+                    st.caption(
+                        "Reference data backing the deterministic rule layer. Synthetic "
+                        "fallback tables are curated to behave correctly for the demo "
+                        "scenarios — they are smaller, not less accurate for this app."
+                    )
+                    for name, info in summary["datasets"].items():
+                        state = "🟢 file-backed" if info["status"] == "file_backed" else "🟡 synthetic fallback"
+                        st.markdown(f"**{name.upper()}** — {state}")
+                        if info.get("version"):
+                            st.caption(f"Version: {info['version']}" + (f" · effective {info['effective_date']}" if info.get("effective_date") else ""))
+                        source = info.get("source")
+                        if source == "downloaded":
+                            st.caption("📥 Downloaded from a configured GitHub Release Asset.")
+                        elif info.get("download_attempted") and info.get("download_error"):
+                            st.caption(f"⚠️ Download attempted but failed ({info['download_error']}) — using fallback.")
         with c_help:
             if st.button("❔", key="help_btn", help="Getting Started", type="primary"):
                 _getting_started_dialog()
@@ -1252,6 +1271,17 @@ def _render_header() -> str:
         "</style>",
         unsafe_allow_html=True,
     )
+
+    if not data_source_ready:
+        # The header above has already been fully rendered and streamed to the
+        # browser at this point — this computation (slow on a machine with the
+        # full local CMS files present, or while an optional CMS asset download
+        # runs) happens after that, never blocking the rest of the header. The
+        # rerun swaps the "Checking…" placeholder for the resolved pill; that
+        # rerun is instant since _data_source_summary() is cache_resource-backed.
+        st.session_state["_data_source_summary_cache"] = _data_source_summary()
+        st.session_state["_data_source_ready"] = True
+        st.rerun()
 
     return reviewer_name
 
