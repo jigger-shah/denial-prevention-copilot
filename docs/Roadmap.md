@@ -742,6 +742,36 @@ Let a hosted deployment optionally use the real NCCI/MUE/ICD-10 reference datase
 
 ---
 
+## Phase 12 — CMS Policy Retrieval Enhancement (Chroma + LCD/NCD) — Deferred / Future
+
+**Status:** 🔜 Deferred — post-MVP retrieval enhancement, not an MVP blocker
+**Estimated scope:** 3–5 days (when undertaken)
+
+### Objectives
+Improve Coverage/Coding agent policy retrieval quality using real CMS LCD/NCD content (`LCD_33431.json`, `NCD_98.json`, available as GitHub Release Assets) via a prebuilt Chroma index, while preserving JSON fallback, fresh-clone reliability, and Streamlit Cloud compatibility.
+
+### Status of analysis
+A planning analysis was completed (post-2026-06-22): both real LCD/NCD assets were downloaded and verified to already match `retrieval/chunking.py:chunk_document()`'s expected shape with no transformation needed, and indexed successfully into ChromaDB (8 chunks, 472KB on disk). The recommended architecture — a prebuilt Chroma index delivered as a GitHub Release Asset, fetched lazily via the same pattern as `rules/cms_asset_fetch.py` (Phase 11) — was identified as the preferred direction. **Implementation was deferred**, tracked as `docs/Technical_Debt_Register.md` TD-28, because:
+- Not required for MVP V1 or for Live CMS rule-layer mode (Phase 11), which already shipped the stronger, lower-risk product signal.
+- ChromaDB's default embedding model (~83MB, downloaded from a fixed AWS S3 URL, cached outside this app's own cache-management code) introduces an unquantified Streamlit Cloud memory/latency risk that hasn't been profiled.
+- The existing 15-claim golden set (TD-24 Future Work) is too small to confidently measure any retrieval-quality change — golden-set expansion should likely precede or accompany this work, not follow it.
+
+### Deliverables (when undertaken — none started)
+- ⬜ `retrieval/chroma_index_fetch.py` — lazy index download/extract, mirroring `rules/cms_asset_fetch.py`'s atomic-write/once-per-process/graceful-fallback pattern
+- ⬜ Offline index-build script (maintainer-run, not part of the app's runtime path)
+- ⬜ `agents/coverage_validation.py`/`coding_validation.py`'s `_get_vector_store()` pointed at the fetched index path
+- ⬜ Tests mirroring `tests/test_cms_asset_fetch.py`'s coverage shape (success/failure/cached-reuse/fallback/app-boot)
+- ⬜ Live benchmark re-run, gated as an explicit go/no-go, not a formality
+
+### Dependencies
+- Phase 11 complete (CMS asset fetch pattern proven in production)
+- Maintainer-curated, deliberately small LCD/NCD document set (start narrow, measure, then decide whether to grow)
+
+### Success Criteria (for future closure)
+See `docs/Technical_Debt_Register.md` TD-28's acceptance criteria — app boots with no/invalid Chroma index, JSON fallback always available, no runtime indexing, no external paid vector DB, full suite passes, live benchmark shows no regression.
+
+---
+
 ==================================================
 ## MVP V1 ACHIEVED
 ==================================================

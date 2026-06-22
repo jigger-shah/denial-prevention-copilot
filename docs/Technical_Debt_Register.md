@@ -578,15 +578,59 @@ Sonnet 4.6 had the best overall F1 and was the only model to score non-zero on b
 
 ---
 
+#### TD-28: Chroma Policy Retrieval Enhancement Deferred
+
+**Severity:** MEDIUM
+
+**Category:** Retrieval / AI Policy Grounding / Post-MVP Enhancement
+
+**Description:** Coverage and Coding agents currently use vector retrieval when a local Chroma index is available, but hosted deployments primarily rely on the curated JSON policy fallback (`retrieval/policy_repository.py`, 25 entries). A Phase 12 planning analysis (post-2026-06-22) confirmed that real LCD/NCD assets (`LCD_33431.json`, `NCD_98.json`, downloaded and verified against `retrieval/chunking.py:chunk_document()` with no transformation needed — both already match the expected normalized shape) can be indexed successfully, and that a prebuilt Chroma index delivered via GitHub Release Asset — mirroring the `rules/cms_asset_fetch.py` lazy-download/atomic-write/graceful-fallback pattern from Phase 11 — is the preferred future architecture. Implementation is deferred to avoid introducing embedding-model download, memory, latency, and benchmark-regression risks immediately after the Live CMS rule-layer launch (Phase 11).
+
+**Current behavior:**
+- Coverage/Coding retrieval attempts Chroma first when available (`_retrieve_from_vector_store()`).
+- If Chroma is unavailable, empty, corrupt, or import-fails, agents fall back to the JSON policy corpus (`_retrieve_from_json_fallback()`).
+- JSON fallback remains the reliable hosted path — this is the path Streamlit Cloud actually runs today.
+- Finding cards label retrieval source (`retrieval_source`: `"vector_store"` / `"json_fallback"`, surfaced as a UI caption — see the manual-claim AI execution parity work).
+
+**Future recommended approach:**
+- Build a Chroma index offline from verified LCD/NCD JSON assets.
+- Package the prebuilt index as a GitHub Release Asset (not committed to git — binary index artifacts don't diff cleanly).
+- Download/extract the index lazily into a temp-dir cache when `CHROMA_INDEX_URL` is configured, mirroring `rules/cms_asset_fetch.py`'s exact pattern.
+- Use Chroma only if the index loads successfully; preserve JSON fallback at all times.
+- Re-run the live benchmark (`evaluation/run_evaluation.py --live`) before claiming any retrieval-quality improvement — directional only, given the existing TD-24 note that the 15-claim golden set is too small for statistically significant conclusions.
+
+**Why deferred:**
+- Not required for MVP V1.
+- Live CMS rule-layer mode (Phase 11) already delivers the stronger, lower-risk product signal.
+- The embedding model dependency (ChromaDB's default `all-MiniLM-L6-v2` ONNX export, ~83MB, downloaded from a fixed AWS S3 URL on first use, cached outside this app's own cache-management code) adds a real, unquantified deployment risk on Streamlit Cloud's free tier that hasn't been profiled.
+- Streamlit Cloud memory/latency profile with Chroma actually enabled must be measured before this is called production-ready.
+- The current 15-claim golden set is too small to confidently measure retrieval-quality changes either way (pre-existing gap, TD-24 Future Work).
+- Golden-set expansion should likely precede or accompany this work, not follow it.
+
+**Acceptance criteria for future closure:**
+- App boots with no Chroma index configured.
+- App boots with an invalid/corrupt Chroma index.
+- JSON fallback remains available in both cases above.
+- A configured, successfully-loaded prebuilt index produces `vector_store` as the `retrieval_source` for the documents it covers.
+- No runtime indexing required (index is built offline, fetched pre-built).
+- No external paid vector DB introduced.
+- Full test suite passes.
+- Live benchmark shows no regression versus the pre-Phase-12 baseline.
+- Documentation explains Chroma optionality and fallback behavior, including the embedding-model download dependency.
+
+**Status:** Deferred. Not required for MVP V1 or for Live CMS rule-layer mode (Phase 11). Revisit as a scoped, narrow follow-up — see `docs/Roadmap.md` Phase 12.
+
+---
+
 ## Debt Summary
 
 | Priority | Count | Resolved | Open |
 |---|---|---|---|
 | High | 11 | 12 (R1–R5, TD-01, TD-02, TD-03, TD-05, TD-08, TD-18, TD-06 — see note) | TD-04 partial (Documentation Review deferred only) |
-| Medium | 11 | 6 (TD-07, TD-07b, TD-08, TD-09, TD-12, TD-27) + 1 partial (TD-24) | 4 (TD-07a, TD-10, TD-11, TD-21) |
+| Medium | 12 | 6 (TD-07, TD-07b, TD-08, TD-09, TD-12, TD-27) + 1 partial (TD-24) | 5 (TD-07a, TD-10, TD-11, TD-21, TD-28 deferred) |
 | Low | 11 | 5 (TD-17, TD-15, TD-20, TD-26, TD-22) | 6 (TD-13, TD-14, TD-16 partial, TD-19, TD-23, TD-25) |
 | Sprint 3 additions | 3 | 3 | 0 |
-| **Total** | **35** | **26** | **9** |
+| **Total** | **36** | **26** | **10** |
 
 Note: TD-04 (most LLM agents still stubs) is now further resolved — orchestrator and denial_prevention are implemented (Phase 7, light scope), and the Coding Validation Agent is now implemented (v1.3, ADR-016). Only Documentation Review (deferred, not a blocker) remains open under TD-04. TD-06 (two hardcoded code validity rules) is now **fully resolved (v1.7)** — the ICD-10-CM reference dataset piece was delivered in v1.5 (via a new separate module rather than rewriting `_load_dx_procedure_rules()`); v1.7 closed the remaining two items by adding two new modifier rules (76/77, 50) and a curated-set HCPCS Level II recognition check (`rules/hcpcs.py`), at the deliberately small scope agreed for the sprint. TD-08 (`test_orchestrator.py` stub) is now fully resolved. TD-09 (golden set evaluation framework) is now resolved (v1.4); its first live run surfaced TD-24 (agent over-flagging lowers live precision). v1.7 completed TD-24 Phase 1 (golden-set label review), Phase 2 (live re-run against the relabeled set, precision rose from 0.30/0.25 to 0.40/0.42 for Coverage/Coding), Phase 3 (anti-pile-on prompt calibration, precision rose further to 0.50/0.43 but recall fell from 1.00 to 0.25/0.60 — overshot, new false negatives on rule-free claims), and Phase 3B (narrowed the suppression instruction to apply only when `rule_findings` is non-empty, recovering recall to 0.50/0.60 while holding precision at 1.00/0.60 — best result of all three phases, overall F1 0.88) — TD-24 is now **partially resolved**: Phases 1, 2, and 3B are complete and a follow-up Haiku-vs-Sonnet-vs-Opus live benchmark (same Phase 3B prompts) found Sonnet 4.6 had the best overall F1 (0.86 vs Haiku's 0.82 and Opus's 0.81), so `_DEFAULT_MODEL` in both agent modules was changed from `claude-haiku-4-5` to `claude-sonnet-4-6` (override via `ANTHROPIC_MODEL` still works; Haiku and Opus remain supported). Remaining gap: a smaller residual multi-finding claim pile-on/drop pattern, plus the 15-claim golden set is still too small for statistically significant conclusions — tracked as TD-24 Future Work (expand to 30–50 claims). v1.5 also opened TD-25 (LOW, informational — the two pre-existing hardcoded code_validity.py rules don't use the new ICD-10 dataset, by design/scope) — still open, deliberately out of scope; **re-investigated during v1.8a** (the UI polish sprint considered widening `dx_procedure_conflict` to prefix-match the full Z00 family, matching `missing_modifier_25`'s existing behavior, but this regressed two calibrated golden-set tests — GOLD-005/GOLD-013 deliberately expect Z00.01 to raise `missing_modifier_25` only, not `dx_procedure_conflict` — so the change was reverted; see the comment above the dx-procedure-conflict check in `rules/code_validity.py` and `tests/test_rule_engine.py::test_diagnosis_mismatch_not_raised_for_other_z00_family_code`). TD-25 remains open, deliberately deferred. TD-26 (LOW, weak model-selected `citation_excerpt` values) was resolved in v1.7. v1.6 (public release hardening) resolved TD-12 — the AI-disabled guard now lives in the orchestrator, not just the agent call sites — and partially resolved TD-16 — `agents/run_logger.py` adds structured per-check logging (rule layer, coverage, coding); `AuditRepository` writes are not yet covered, so TD-16 remains open at LOW priority. TD-15 (synthetic-sounding citation edition labels in `code_validity.py`) and TD-20 (citation excerpts not persisted to the audit log) were both resolved in v1.7. TD-27 (hosted deployment may silently run on synthetic fallback data) had its backend status-check piece resolved in v1.7 (`rules/data_source_status.py`) and its UI piece resolved in v1.8a (header "Data:" status pill) — **fully resolved**. TD-22 (only one retrieved policy displayed per AI finding) is **resolved (v1.8b)** — "Supporting Policies Reviewed" now surfaces every policy an agent retrieved, not just the cited one.
 
