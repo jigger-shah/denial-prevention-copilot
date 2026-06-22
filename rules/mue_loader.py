@@ -34,6 +34,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from rules import cms_asset_fetch
+
 MUE_VERSION = "Q32026"
 MUE_EFFECTIVE_DATE = "2026-07-01"
 MUE_DOC_ID = "CMS_MUE_PRACTITIONER_Q32026"
@@ -60,8 +62,20 @@ MAI_DESCRIPTIONS: dict[str, str] = {
 }
 
 
-def discover_mue_files(reference_dir: str = _DEFAULT_DIR) -> list[str]:
+def _resolve_mue_reference_dir() -> str:
+    """Phase 11: prefer a populated download cache over the local reference dir.
+    See rules/ncci_loader.py:_resolve_ncci_reference_dir() for the full design note."""
+    cms_asset_fetch.ensure_mue_assets()
+    cache_dir = cms_asset_fetch.mue_cache_dir()
+    if list(Path(cache_dir).glob("*.xlsx")) or list(Path(cache_dir).glob("*.csv")):
+        return cache_dir
+    return _DEFAULT_DIR
+
+
+def discover_mue_files(reference_dir: str | None = None) -> list[str]:
     """Return sorted list of .xlsx and .csv file paths found in reference_dir."""
+    if reference_dir is None:
+        reference_dir = _resolve_mue_reference_dir()
     dir_path = Path(reference_dir)
     if not dir_path.exists():
         return []
@@ -222,17 +236,21 @@ def _build_mue_table(reference_dir: str) -> dict[str, dict]:
     return merged
 
 
-def load_mue_table(reference_dir: str = _DEFAULT_DIR) -> dict[str, dict]:
+def load_mue_table(reference_dir: str | None = None) -> dict[str, dict]:
     """
     Return the MUE lookup dict (file-backed if available, synthetic otherwise).
 
     Falls back to _SYNTHETIC_MUE when no CMS files are found in reference_dir.
+    reference_dir=None resolves via _resolve_mue_reference_dir() — see
+    discover_mue_files(). An explicit override bypasses that entirely.
     """
+    if reference_dir is None:
+        reference_dir = _resolve_mue_reference_dir()
     table = _build_mue_table(reference_dir)
     return table if table else _SYNTHETIC_MUE
 
 
-def lookup_mue(code: str, reference_dir: str = _DEFAULT_DIR) -> dict | None:
+def lookup_mue(code: str, reference_dir: str | None = None) -> dict | None:
     """
     Return MUE entry for the given HCPCS/CPT code, or None if not in the table.
 

@@ -36,6 +36,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from rules import cms_asset_fetch
+
 NCCI_VERSION = "v322r0"
 NCCI_EFFECTIVE_DATE = "2026-07-01"
 NCCI_DOC_ID = "CMS_NCCI_PTP_v322r0"
@@ -58,8 +60,28 @@ _MODIFIER_DESCRIPTIONS = {
 }
 
 
-def discover_ncci_files(reference_dir: str = _DEFAULT_DIR) -> list[str]:
+def _resolve_ncci_reference_dir() -> str:
+    """
+    Phase 11: prefer a populated download cache over the local reference dir.
+
+    Lazily attempts the configured GitHub Release Asset downloads (a no-op if
+    no URLs are configured, or if already cached this process — see
+    rules/cms_asset_fetch.py), then returns the cache dir if it now has any
+    .xlsx files, else the existing local _DEFAULT_DIR unchanged. Only called
+    when no explicit reference_dir is passed — an explicit override (as every
+    existing test uses) bypasses this entirely.
+    """
+    cms_asset_fetch.ensure_ncci_assets()
+    cache_dir = cms_asset_fetch.ncci_cache_dir()
+    if list(Path(cache_dir).glob("*.xlsx")):
+        return cache_dir
+    return _DEFAULT_DIR
+
+
+def discover_ncci_files(reference_dir: str | None = None) -> list[str]:
     """Return sorted list of .xlsx file paths found in reference_dir."""
+    if reference_dir is None:
+        reference_dir = _resolve_ncci_reference_dir()
     dir_path = Path(reference_dir)
     if not dir_path.exists():
         return []
@@ -152,13 +174,18 @@ def _build_edit_table(reference_dir: str) -> dict[tuple[str, str], dict]:
     return lookup
 
 
-def load_ncci_ptp_edits(reference_dir: str = _DEFAULT_DIR) -> dict:
+def load_ncci_ptp_edits(reference_dir: str | None = None) -> dict:
     """
     Return the NCCI PTP edit lookup dict (cached after first load).
 
     Returns an empty dict if no Excel files are found in reference_dir.
     To reload after adding new files, call _clear_ncci_cache() first.
+
+    reference_dir=None (the default) resolves via _resolve_ncci_reference_dir()
+    — see discover_ncci_files(). An explicit override bypasses that entirely.
     """
+    if reference_dir is None:
+        reference_dir = _resolve_ncci_reference_dir()
     return _build_edit_table(reference_dir)
 
 
@@ -170,7 +197,7 @@ def _clear_ncci_cache() -> None:
 def lookup_ncci_pair(
     code_a: str,
     code_b: str,
-    reference_dir: str = _DEFAULT_DIR,
+    reference_dir: str | None = None,
 ) -> dict | None:
     """
     Return NCCI edit details if code_a and code_b form an active PTP edit pair.

@@ -21,6 +21,8 @@ from __future__ import annotations
 import functools
 from pathlib import Path
 
+from rules import cms_asset_fetch
+
 ICD10_VERSION = "FY2026"
 ICD10_EFFECTIVE_DATE = "2025-10-01"
 ICD10_DOC_ID = "CMS_ICD10CM_ORDER_FY2026"
@@ -49,8 +51,20 @@ _SYNTHETIC_ICD10: dict[str, dict] = {
 }
 
 
-def discover_icd10_file(reference_dir: str = _DEFAULT_DIR) -> str | None:
+def _resolve_icd10_reference_dir() -> str:
+    """Phase 11: prefer a populated download cache over the local reference dir.
+    See rules/ncci_loader.py:_resolve_ncci_reference_dir() for the full design note."""
+    cms_asset_fetch.ensure_icd10_assets()
+    cache_dir = cms_asset_fetch.icd10_cache_dir()
+    if list(Path(cache_dir).glob("icd10cm_order*.txt")):
+        return cache_dir
+    return _DEFAULT_DIR
+
+
+def discover_icd10_file(reference_dir: str | None = None) -> str | None:
     """Return the path to the first CMS ICD-10-CM order .txt file found, or None."""
+    if reference_dir is None:
+        reference_dir = _resolve_icd10_reference_dir()
     dir_path = Path(reference_dir)
     if not dir_path.exists():
         return None
@@ -109,17 +123,21 @@ def _build_icd10_table(reference_dir: str) -> dict[str, dict]:
         return {}
 
 
-def load_icd10_table(reference_dir: str = _DEFAULT_DIR) -> dict[str, dict]:
+def load_icd10_table(reference_dir: str | None = None) -> dict[str, dict]:
     """
     Return the ICD-10-CM lookup dict (file-backed if available, synthetic otherwise).
 
     Falls back to _SYNTHETIC_ICD10 when no CMS order file is found in reference_dir.
+    reference_dir=None resolves via _resolve_icd10_reference_dir() — see
+    discover_icd10_file(). An explicit override bypasses that entirely.
     """
+    if reference_dir is None:
+        reference_dir = _resolve_icd10_reference_dir()
     table = _build_icd10_table(reference_dir)
     return table if table else _SYNTHETIC_ICD10
 
 
-def lookup_icd10(code: str, reference_dir: str = _DEFAULT_DIR) -> dict | None:
+def lookup_icd10(code: str, reference_dir: str | None = None) -> dict | None:
     """
     Return the ICD-10-CM entry for the given code, or None if not in the table.
 

@@ -1178,6 +1178,11 @@ def _render_header() -> str:
                     st.markdown(f"**{name.upper()}** — {state}")
                     if info.get("version"):
                         st.caption(f"Version: {info['version']}" + (f" · effective {info['effective_date']}" if info.get("effective_date") else ""))
+                    source = info.get("source")
+                    if source == "downloaded":
+                        st.caption("📥 Downloaded from a configured GitHub Release Asset.")
+                    elif info.get("download_attempted") and info.get("download_error"):
+                        st.caption(f"⚠️ Download attempted but failed ({info['download_error']}) — using fallback.")
         with c_help:
             if st.button("❔", key="help_btn", help="Getting Started", type="primary"):
                 _getting_started_dialog()
@@ -1272,7 +1277,11 @@ def _getting_started_dialog() -> None:
             "- Cached AI demo scenarios\n"
             "- AI Disabled mode\n"
             "- Data Source status indicator\n"
-            "- Getting Started guidance\n\n"
+            "- Getting Started guidance\n"
+            "- Optional Live CMS rule-layer data: hosted deployments can automatically "
+            "download real NCCI/MUE/ICD-10 reference datasets from maintainer-configured "
+            "GitHub Release Assets when available, with graceful fallback to synthetic "
+            "datasets when not\n\n"
             "**Notes:**\n"
             "- Synthetic data only\n"
             "- Not for clinical or billing use\n"

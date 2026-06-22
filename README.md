@@ -94,6 +94,30 @@ AI-sourced finding cards include a **"Supporting Policies Reviewed"** section li
 
 The audit database initializes automatically on first app load — no manual setup step is required, and the schema is re-applied (idempotently) on every connection, so it self-repairs if the underlying file is ever recreated empty mid-session. The audit trail is demo-local: on hosted deployments such as Streamlit Cloud, audit history may reset when the app restarts, redeploys, or sleeps — acceptable here since the app uses synthetic demo data only.
 
+## Live CMS Data (optional, Phase 11)
+
+The real NCCI/MUE/ICD-10 reference files (~266MB combined) are gitignored and never committed (see TD-27 in `docs/Technical_Debt_Register.md`) — a fresh clone or hosted deployment normally runs on the small curated synthetic fallback tables instead. Phase 11 adds an **optional** way for a hosted deployment to use the real datasets anyway: if the repo maintainer configures GitHub Release Asset URLs as environment variables (or Streamlit Cloud secrets), the app downloads them once per process into a temp-directory cache and uses them exactly as if they'd been placed locally.
+
+```bash
+CMS_NCCI_F1_URL=https://github.com/<org>/<repo>/releases/download/<tag>/ccipra-v322r0-f1.xlsx
+CMS_NCCI_F2_URL=...
+CMS_NCCI_F3_URL=...
+CMS_NCCI_F4_URL=...
+CMS_MUE_URL=https://github.com/<org>/<repo>/releases/download/<tag>/MCR_MUE_PractitionerServices_Eff_07-01-2026.xlsx
+CMS_ICD10_URL=https://github.com/<org>/<repo>/releases/download/<tag>/icd10cm_order_2026.txt
+```
+
+All six are optional and independent — set none, some, or all. Behavior:
+
+- **None configured** (the default, e.g. on a fresh clone): no download is attempted, nothing changes from today's behavior — local files if present, synthetic fallback otherwise.
+- **Some/all configured, download succeeds**: the file is cached under `tempfile.gettempdir()/denial_copilot_cms_cache/` and used exactly like a local file — the header "Data:" pill shows "🟢 Live CMS" (or "🟡 Mixed" if only some datasets downloaded), and its popover notes "📥 Downloaded from a configured GitHub Release Asset."
+- **Configured but the download fails** (network error, timeout, bad URL): the failure is caught and logged, nothing crashes, and the app falls back to the local file or synthetic table exactly as if nothing had been configured — the popover notes the attempt and its error instead of silently hiding it.
+- **Caching is per-process, not permanent**: a download is attempted at most once per running process (mirroring the existing audit-DB and ChromaDB self-healing patterns) — a Streamlit Cloud restart/redeploy/sleep-wake re-attempts it lazily on first access, it does not "remember" across restarts.
+
+Asset URLs must point at actual tagged GitHub Release assets (`.../releases/download/<tag>/<file>`), not ephemeral `github.com/user-attachments/...` comment-attachment links, which aren't guaranteed to remain stable. No URL is hardcoded anywhere in the codebase — the feature is entirely opt-in via configuration, and no secret/credential is required (these are public file URLs, not API keys).
+
+This sprint covers only the rule-layer datasets (NCCI, MUE, ICD-10) and the Data Source Status pill. Coverage/Coding policy retrieval (Chroma vs. JSON fallback) is unchanged and out of scope here — see `docs/Roadmap.md` for that as a separate future phase.
+
 ## Test
 
 ```bash

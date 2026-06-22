@@ -526,6 +526,8 @@ Implement `rules/ncci_loader.py` that:
 - `ncci_loader._clear_ncci_cache()` must be called in tests that need to inject a different reference directory.
 - When CMS releases a new quarterly edition, update `NCCI_VERSION` and `NCCI_EFFECTIVE_DATE` in `ncci_loader.py`, replace the xlsx files, and restart.
 
+> **Update (Phase 11, Live CMS Rule-Layer Mode, post-2026-06-22):** "Portability by default" above still holds exactly as decided — the synthetic fallback fires whenever no real files are found, unconditionally. Phase 11 adds an optional third way for the real files to become present, alongside "developer manually downloaded them": `rules/cms_asset_fetch.py` lazily downloads from maintainer-configured GitHub Release Asset URLs into a temp-dir cache, which `rules/ncci_loader.py` (and the MUE/ICD-10 loaders identically) now check before falling back to the local `data/reference/` directory. No URL is hardcoded, no download is required, and any failure degrades to exactly the fallback behavior this ADR already specifies — this is additive to, not a revision of, the decision above. See `docs/Roadmap.md` Phase 11 and `docs/Technical_Debt_Register.md` TD-27's amended "Remaining gap" note.
+
 ---
 
 ## ADR-009: Local Policy Reference Dataset Before CMS API Integration

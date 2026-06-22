@@ -713,6 +713,35 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 
 ---
 
+## Phase 11 — Live CMS Rule-Layer Mode via GitHub Release Assets
+
+**Status:** ✅ Complete (rule-layer scope only)
+**Estimated scope:** 1 session
+
+### Objectives
+Let a hosted deployment optionally use the real NCCI/MUE/ICD-10 reference datasets (closing the "remaining gap" TD-27 left open — see `docs/Technical_Debt_Register.md`) without requiring it, without committing the ~266MB files to the repo, and without breaking any existing fallback behavior.
+
+### Deliverables
+- ✅ `rules/cms_asset_fetch.py` — new module providing `ensure_ncci_assets()` / `ensure_mue_assets()` / `ensure_icd10_assets()`. Each is optional (6 independent env-var-or-`st.secrets`-configured URLs: `CMS_NCCI_F1_URL`..`F4_URL`, `CMS_MUE_URL`, `CMS_ICD10_URL`, no defaults, no hardcoded URLs of any kind), lazy (only attempted on first actual access, never at import time), attempted at most once per process (`@lru_cache(maxsize=1)`), and never raises — every failure mode (missing config, network error, timeout, non-200, zero-byte response) degrades to "not cached," which the existing loaders already turn into local-file-or-synthetic-fallback. Downloads are atomic (write to `.part`, then `os.replace()`) and cached under `tempfile.gettempdir()/denial_copilot_cms_cache/` — never inside the repo tree, same ephemeral-cache reasoning as `db/audit_repository.py`'s `DB_PATH`.
+- ✅ `rules/ncci_loader.py` / `rules/mue_loader.py` / `rules/icd10_loader.py` — each loader's public `discover_*`/`load_*`/`lookup_*` functions changed their `reference_dir` default from a fixed path to `None`, resolved lazily via a new `_resolve_*_reference_dir()` helper (cache dir first if it has files, else the existing local `data/reference/...` dir, unchanged). Every existing call site already omitted `reference_dir` (relying on the default), so this is the only seam touched; every existing test that passes `reference_dir` explicitly is completely unaffected.
+- ✅ `rules/data_source_status.py` — per-dataset status gained additive `source` (`"downloaded"` / `"local_file"` / `"synthetic_fallback"`), `download_attempted`, and `download_error` fields. The existing `status` field (`"file_backed"`/`"synthetic_fallback"`) and `app/main.py`'s aggregate file_backed/synthetic_fallback/mixed pill logic are both unchanged — "Mixed" already worked correctly for "some datasets downloaded, others didn't" with zero changes needed there.
+- ✅ `app/main.py` — Data Source Status popover gained one line per dataset: "📥 Downloaded from a configured GitHub Release Asset" on success, or "⚠️ Download attempted but failed (...) — using fallback" on a configured-but-failed attempt. No change when nothing is configured (today's behavior, verbatim).
+- ✅ 21 new tests in `tests/test_cms_asset_fetch.py` (no URLs configured, download success/failure/timeout/HTTP-error, partial download, cached-file-reused, zero-byte rejected, atomic-write/no-`.part`-leftover, loader discovery of cached files, explicit-override bypass, app-boot smoke tests) plus 5 new tests extending `tests/test_data_source_status.py` (local-file vs. downloaded vs. synthetic source attribution, download-failure status, mixed-status with a mix of downloaded/fallback datasets). 549 tests passing (up from 523).
+- ❌ Out of scope, deliberately: Chroma indexing, LCD/NCD policy asset ingestion, Coverage/Coding retrieval changes, embedding-model downloads, runtime Chroma builds, external vector DBs, golden-set expansion. None of `retrieval/`, `agents/coverage_validation.py`, or `agents/coding_validation.py` were touched.
+
+### Dependencies
+- Phase 10 complete (Streamlit Cloud deployment-ready)
+- Maintainer uploads the CMS files as assets on an actual tagged GitHub Release (not `github.com/user-attachments/...` links, which aren't guaranteed stable) — a manual, one-time action outside this codebase
+
+### Success Criteria
+- App boots with no CMS assets configured (unchanged behavior)
+- App boots with missing/invalid asset URLs (graceful failure, no crash)
+- App uses real CMS files when asset URLs are valid and reachable — Data Source Status reflects it accurately, including "Mixed" for partial success
+- No Chroma behavior changed
+- Full test suite passes
+
+---
+
 ==================================================
 ## MVP V1 ACHIEVED
 ==================================================
