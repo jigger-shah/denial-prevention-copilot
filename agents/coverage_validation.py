@@ -208,11 +208,13 @@ def validate_coverage(
             tool_choice={"type": "any"},
             messages=[{"role": "user", "content": user_message}],
         )
+        findings = _parse_response(response, retrieved_doc_ids, lcd_policies, claim.claim_id)
     except Exception as exc:
-        logger.warning("Coverage validation API error: %s", exc)
+        # Covers both the API call and response parsing — an unexpected or
+        # malformed model response must degrade to "no finding", not propagate
+        # and crash the orchestrator/Streamlit run, exactly like an API error.
+        logger.warning("Coverage validation error: %s", exc)
         return [], lcd_policies
-
-    findings = _parse_response(response, retrieved_doc_ids, lcd_policies, claim.claim_id)
     return findings, lcd_policies
 
 
@@ -243,6 +245,7 @@ def _vector_result_to_policy(result: dict) -> dict:
         "effective_date": result.get("effective_date"),
         "edition": "",
         "excerpt": result.get("text", ""),
+        "retrieval_source": "vector_store",
     }
 
 
@@ -275,7 +278,10 @@ def _retrieve_from_json_fallback(claim: ClaimIn) -> list[dict]:
         icd10_codes=claim.icd10_codes,
     )
     lcd_policies = [p for p in all_policies if p.get("source_type") in _LCD_SOURCE_TYPES]
-    return lcd_policies[:_MAX_POLICIES]
+    # Copy (never mutate the cached policy_repository dicts) — tagged so the UI
+    # can label this context as fallback rather than implying live vector
+    # retrieval found a semantically-matched policy.
+    return [{**p, "retrieval_source": "json_fallback"} for p in lcd_policies[:_MAX_POLICIES]]
 
 
 def _retrieve_policies(claim: ClaimIn) -> list[dict]:

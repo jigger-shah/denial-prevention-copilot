@@ -16,6 +16,7 @@ Manual claim transformation lives in app/claim_intake.py (no Streamlit there).
 """
 
 import json
+import logging
 import pathlib
 import sys
 
@@ -232,6 +233,19 @@ def _render_risk_explanation(risk_score: str, findings: list) -> None:
     st.markdown(f"**Recommended Action:** {_RECOMMENDED_ACTION.get(risk_score, 'Review findings below.')}")
 
 
+def _citation_is_json_fallback(citation, retrieved_policies: list[dict] | None) -> bool:
+    """
+    True iff the policy this citation was drawn from came from the curated
+    JSON fallback corpus rather than the ChromaDB vector store — so the UI
+    can label the context as fallback instead of implying a live, semantically
+    matched policy retrieval. Never claims live retrieval where there was none.
+    """
+    if not retrieved_policies:
+        return False
+    matching = next((p for p in retrieved_policies if p.get("document_id") == citation.doc_id), None)
+    return bool(matching) and matching.get("retrieval_source") == "json_fallback"
+
+
 def _citation_caption(citation) -> str:
     text = f"{citation.source} — {citation.section}"
     if citation.edition:
@@ -335,6 +349,11 @@ def _finding_card(
                 f"Citation: {_citation_caption(finding.citation)} &nbsp;|&nbsp; "
                 f"Confidence: {finding.confidence:.0%}"
             )
+            if _citation_is_json_fallback(finding.citation, retrieved_policies):
+                st.caption(
+                    "📁 Policy context: curated JSON fallback corpus — the vector "
+                    "store was empty, unseeded, or unavailable for this claim."
+                )
             if finding.confidence < CONFIDENCE_REVIEW_THRESHOLD:
                 st.caption("⚠️ **Manual Review Recommended** — confidence below 70%")
             with st.expander("📄 View policy detail"):
@@ -448,6 +467,32 @@ def _render_checks_summary(findings: list) -> None:
         st.caption("Checks run: " + CHECKS_RUN[0])
     else:
         st.caption("Checks run: " + " · ".join(CHECKS_RUN))
+
+
+def _run_full_review_safely(claim):
+    """
+    Call agents.orchestrator.run_review() and surface any unexpected failure
+    as a visible st.error() instead of an unhandled Streamlit exception.
+
+    The orchestrator and both agents already degrade individual check
+    failures (API errors, malformed model responses) to "no finding" — this
+    is a last-resort guard for anything still unaccounted for (e.g. a bug in
+    synthesis), so a single bad claim can never blank-screen the app for any
+    claim source, demo or manual.
+
+    Returns (assessment, retrieved_policies) on success, or (None, None) on
+    failure after showing the error.
+    """
+    try:
+        return run_review(claim)
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Full review failed for claim %s", claim.claim_id)
+        st.error(
+            f"⚠️ Full review could not complete due to an unexpected error: {exc}\n\n"
+            "Deterministic rule-engine review is still available via "
+            "\"Review Claim (rule layer only)\"."
+        )
+        return None, None
 
 
 def _render_full_review_results(
@@ -880,11 +925,12 @@ def _render_manual_mode(reviewer_name: str, repo: AuditRepository) -> None:
         else:
             _clear_review_state()
             claim = load_claim(claim_dict)
-            assessment, retrieved_policies = run_review(claim)
-            st.session_state["full_review_assessment"] = assessment
-            st.session_state["full_review_retrieved_policies"] = retrieved_policies
-            st.session_state["full_review_claim_id"] = claim_dict["claim_id"]
-            st.session_state["full_review_claim_dict"] = claim_dict
+            assessment, retrieved_policies = _run_full_review_safely(claim)
+            if assessment is not None:
+                st.session_state["full_review_assessment"] = assessment
+                st.session_state["full_review_retrieved_policies"] = retrieved_policies
+                st.session_state["full_review_claim_id"] = claim_dict["claim_id"]
+                st.session_state["full_review_claim_dict"] = claim_dict
 
     if "full_review_assessment" in st.session_state and st.session_state.get("full_review_claim_dict"):
         _render_full_review_results(
@@ -1000,10 +1046,11 @@ def _render_sample_mode(reviewer_name: str, repo: AuditRepository) -> None:
     if run_full_clicked:
         _clear_review_state()
         claim = load_claim(claim_dict)
-        assessment, retrieved_policies = run_review(claim)
-        st.session_state["full_review_assessment"] = assessment
-        st.session_state["full_review_retrieved_policies"] = retrieved_policies
-        st.session_state["full_review_claim_id"] = claim_dict["claim_id"]
+        assessment, retrieved_policies = _run_full_review_safely(claim)
+        if assessment is not None:
+            st.session_state["full_review_assessment"] = assessment
+            st.session_state["full_review_retrieved_policies"] = retrieved_policies
+            st.session_state["full_review_claim_id"] = claim_dict["claim_id"]
 
     if (
         "full_review_assessment" in st.session_state

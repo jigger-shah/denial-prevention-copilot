@@ -254,6 +254,29 @@ def test_api_exception_returns_empty_no_propagation(mock_anthropic, monkeypatch)
 
 
 @patch("agents.coverage_validation.anthropic.Anthropic")
+def test_malformed_response_returns_empty_no_propagation(mock_anthropic, monkeypatch):
+    """A response that parses but has an unexpected shape (e.g. a non-numeric
+    confidence value) must degrade to no finding, not raise and crash the
+    orchestrator/Streamlit run — _parse_response() is now covered by the same
+    try/except as the API call itself, not just the network call."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    tool_block = _tool_use_block("report_coverage_finding", {
+        "issue": "E/M billed with preventive diagnosis only",
+        "recommendation": "Add modifier 25 and a separate problem diagnosis.",
+        "severity": "MEDIUM",
+        "confidence": "not-a-number",  # float() on this raises ValueError in _parse_response
+        "citation_doc_id": "LCD_E_M_MEDICAL_NECESSITY_Z00",
+        "citation_section": "Indications and Limitations of Coverage and/or Medical Necessity",
+    })
+    mock_anthropic.return_value.messages.create.return_value = _mock_response(tool_block)
+
+    findings, policies = validate_coverage(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+    assert findings == []
+    assert policies  # retrieved policies are still returned for "Supporting Policies Reviewed"
+
+
+@patch("agents.coverage_validation.anthropic.Anthropic")
 def test_no_tool_use_block_returns_empty(mock_anthropic, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     mock_anthropic.return_value.messages.create.return_value = _mock_response(
@@ -379,6 +402,7 @@ def test_vector_results_convert_to_policy_like_objects(mock_vector_store):
         "effective_date": "2025-07-01",
         "edition": "",
         "excerpt": "Some excerpt text.",
+        "retrieval_source": "vector_store",
     }
 
 
@@ -426,6 +450,29 @@ def test_json_fallback_used_when_vector_store_count_is_zero(mock_vector_store):
 
     mock_vector_store.query.assert_not_called()
     assert policies  # JSON corpus has a match for Z00.00
+    assert all(p.get("retrieval_source") == "json_fallback" for p in policies)
+
+
+def test_vector_store_policies_tagged_with_retrieval_source(mock_vector_store):
+    """Policies from the live vector store must be labeled distinctly from
+    JSON fallback so the UI can tell the user which context was used."""
+    from agents.coverage_validation import _retrieve_policies
+
+    mock_vector_store.count.return_value = 1
+    mock_vector_store.query.return_value = [{
+        "document_id": "LCD_VECTOR_TEST",
+        "document_title": "Vector Policy",
+        "section_heading": "Indications",
+        "effective_date": "2026-01-01",
+        "chunk_index": 0,
+        "text": "Vector chunk text.",
+        "distance": 0.1,
+    }]
+
+    policies = _retrieve_policies(_claim(cpt_codes=["99213"], icd10_codes=["Z00.00"]))
+
+    assert policies
+    assert all(p.get("retrieval_source") == "vector_store" for p in policies)
 
 
 def test_json_fallback_used_when_vector_store_raises(mock_vector_store):
