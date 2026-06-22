@@ -710,6 +710,29 @@ Deploy the application to Streamlit Cloud so it is accessible via a public URL w
 
 ---
 
+==================================================
+## MVP V1 ACHIEVED
+==================================================
+
+**Implemented through:**
+- v1.8a
+- v1.8b
+- v1.9
+
+**Objectives achieved:**
+- Core rule engine
+- Coverage validation
+- Coding validation
+- Citation grounding
+- Human review workflow
+- Audit logging
+- Deployment readiness
+- Fresh clone validation
+
+This milestone is the public-facing product designation — see `README.md`'s "Current Product Release" line and `docs/Repository_Status_Report.md`'s MVP V1 update for the current-state summary. The phase-by-phase history above (Phase 0 through Phase 10) is the detailed engineering record behind this milestone and is preserved as-is; this section does not supersede or rewrite it.
+
+---
+
 ## Milestone Summary
 
 | Phase | Status | Key Output | PRD Priority |

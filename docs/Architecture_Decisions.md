@@ -3,6 +3,26 @@
 
 This document records the major architecture decisions made during development, the reasoning behind each, the alternatives considered, and the implications for future phases. Where decisions had lasting structural consequences, the ADR (Architecture Decision Record) format is used.
 
+> **As of MVP V1 (implemented through v1.9):** the architecture described by the ADRs below resolves to one end-to-end flow:
+>
+> ```
+> Rule Layer
+>   ↓
+> Coverage Agent
+>   ↓
+> Coding Agent
+>   ↓
+> Deterministic Synthesis
+>   ↓
+> Risk Assessment
+>   ↓
+> Human Review
+>   ↓
+> Audit Trail
+> ```
+>
+> This is fresh-clone validated and deployment-ready (Streamlit Cloud secrets compatibility, self-healing audit DB on the OS temp directory). It remains a synthetic-data demo architecture — not validated against real claims, real payer adjudication, or real patient data. The individual ADRs below are not rewritten by this note; they document the decisions that produced this flow.
+
 ---
 
 ## ADR-001: Deterministic Rule Layer Before LLM Agents

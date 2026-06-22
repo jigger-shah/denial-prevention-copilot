@@ -8,7 +8,21 @@ Built on free public data: NPPES NPI Registry, CMS Coverage API (NCDs/LCDs), NCC
 
 > **Not for clinical or billing use.** This is a synthetic-data prototype demonstrating an architecture pattern, not production healthcare software. It is not HIPAA certified and has not been validated against real claims, real payer adjudication, or real patient data. Do not use it to make actual coverage, coding, or billing decisions.
 
-**Status:** v1.8b (Citation & Transparency) complete — 497 tests passing. v1.8a added the current header-based UI (reviewer name, AI status, data-source status, Getting Started onboarding); v1.8b closed TD-22, surfacing every policy an AI agent considered, not just the one it cited. Streamlit Cloud deployment readiness (Phase 10) is partially complete: a `get_secret()` helper (`agents/secrets.py`) resolves `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL` from either a local `.env`/environment variable or Streamlit Cloud's `st.secrets`, and the audit database now defaults to the OS temp directory rather than a path inside the repo, since Streamlit Cloud's filesystem is ephemeral. Default AI model: Claude Sonnet 4.6 (override with `ANTHROPIC_MODEL`). See `docs/Technical_Debt_Register.md` for the full TD-24 calibration history and the Haiku/Sonnet/Opus model comparison behind that choice.
+**Current Product Release: MVP (V1)** — implemented through v1.9. The MVP brings together the deterministic rule engine, Coverage Validation Agent, Coding Validation Agent, and Unified Risk Assessment behind a human Accept/Override workflow with a full audit trail, every AI finding backed by a cited LCD/NCD source. The app is deployment-ready (Streamlit Cloud secrets compatibility, self-healing audit DB) and fresh-clone validated, with 500 tests passing. In short, this release includes:
+
+- Deterministic Rule Engine (NPI, NCCI, MUE, ICD-10, HCPCS, modifier, diagnosis-procedure checks)
+- Coverage Validation Agent
+- Coding Validation Agent
+- Unified Risk Assessment
+- Citation Grounding (no citation → no finding)
+- Supporting Policies Reviewed (every retrieved policy, not just the cited one)
+- Human Accept/Override Review Workflow
+- Append-Only Audit Trail
+- Deployment Ready (Streamlit Cloud secrets + temp-dir audit DB)
+- Fresh Clone Validated
+- 500 Tests Passing
+
+MVP (V1) was implemented across three engineering releases — v1.8a (UI polish and first-time UX), v1.8b (citation transparency / Supporting Policies Reviewed), and v1.9 (Streamlit Cloud deployment readiness, including the audit-schema self-healing fix). The in-app "Getting Started" → "What Changed" notes now show only the public-facing MVP (V1) summary; full engineering version history — v1.0 through v1.9 — is preserved in `docs/Roadmap.md`. Default AI model: Claude Sonnet 4.6 (override with `ANTHROPIC_MODEL`). See `docs/Technical_Debt_Register.md` for the full TD-24 calibration history and the Haiku/Sonnet/Opus model comparison behind that choice.
 
 ## Screenshots
 

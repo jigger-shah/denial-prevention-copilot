@@ -4,6 +4,8 @@
 **App URL (local):** `http://localhost:8501`  
 **Launch command:** `source .venv/bin/activate && streamlit run app/main.py`
 
+**Validated against:** MVP V1 (v1.9)
+
 > **Update (Phase 4, Session 1D):** The Coverage Validation Agent now actually queries ChromaDB first, exactly as line ~422 below describes — that section was written ahead of implementation and is now accurate as the *first* retrieval step. However, the vector store ships unseeded (no bulk CMS corpus was loaded as part of Phase 4, by design), so in the demo as currently configured the agent falls through to the JSON policy corpus described elsewhere in this script every time. The demo flow, talking points, and expected findings below are unchanged. See `docs/Architecture_Decisions.md` ADR-013 for the fallback design.
 
 ---
