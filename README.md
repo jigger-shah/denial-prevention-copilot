@@ -85,7 +85,7 @@ The app runs fully on a fresh clone with no `ANTHROPIC_API_KEY` — no setup bey
 
 The Coverage Validation and Coding Validation agents call the Anthropic API and need an `ANTHROPIC_API_KEY`. Without one:
 
-- The header status pill shows **"● AI: Disabled"**, and the in-page AI sections show **"⚠ AI Agents Disabled"** — the app never attempts an Anthropic call and never constructs an Anthropic client.
+- The header "AI: Enabled" pill is hidden (no "AI: Disabled" pill is shown — the **"Anthropic API Key"** control next to it already conveys that no key is configured), and the in-page AI sections show **"⚠ AI Agents Disabled"** — the app never attempts an Anthropic call and never constructs an Anthropic client.
 - The deterministic rule-engine review (NCCI, MUE, NPI, code validity) remains fully available.
 - Three designated sample claims display **pre-generated, clearly labeled** ("📋 Pre-generated demonstration results") AI findings captured from a real run, so you can preview representative agent output without making a live API call. See `docs/Demo_Script.md`.
 
@@ -96,7 +96,7 @@ There are two ways to enable live AI:
    cp .env.example .env
    # edit .env and set ANTHROPIC_API_KEY=sk-ant-...
    ```
-2. **Any user — session key via the UI** (temporary, for just your browser session): click the **⚙️** icon next to the AI status pill, paste your own key, and click "Enable AI." The key is held only in Streamlit's session state — never written to disk, never logged, never stored in the audit trail — and disappears when you click "Clear Key" or the browser session ends. A session key takes priority over an app-owner key for the rest of that session.
+2. **Any user — session key via the UI** (temporary, for just your browser session): click the **"Anthropic API Key"** button next to the AI status pill, paste your own key, and click "Enable AI." The key is held only in Streamlit's session state — never written to disk, never logged, never stored in the audit trail — and disappears when you click "Clear Key" or the browser session ends. A session key takes priority over an app-owner key for the rest of that session.
 
 Either way, the header status pill shows **"● AI: Enabled"** and both agents run as part of "Run Full Review."
 
@@ -104,7 +104,7 @@ Either way, the header status pill shows **"● AI: Enabled"** and both agents r
 
 The app has no sidebar — the reviewer name field and two status pills live in a header bar at the top of the page:
 
-- **AI status pill** — "● AI: Enabled" / "● AI: Disabled", reflecting whether an `ANTHROPIC_API_KEY` is set (session key, environment variable, or Streamlit secrets). A small **⚙️** icon next to the pill opens a popover for entering your own key for the current session.
+- **AI status pill** — shows "● AI: Enabled" when an `ANTHROPIC_API_KEY` is set (session key, environment variable, or Streamlit secrets); hidden otherwise. An **"Anthropic API Key"** button next to the pill opens a popover for entering your own key for the current session; its footer notes that pre-generated cached AI results are shown for claims when no key is set.
 - **Data Source Status pill** — defaults to "⚪ Data: Not Refreshed" on every fresh page load; nothing is checked or downloaded automatically, so startup stays fast regardless of CMS reference data size. Click the pill to open a popover with a "🔍 Check CMS Data Availability" button — only then does it call `rules/data_source_status.py` and resolve to "🟢 Data: Live CMS" / "🟡 Data: Synthetic fallback" / "🟡 Data: Mixed" (see TD-27 in `docs/Technical_Debt_Register.md`). The result is cached for the rest of the browser session — it won't re-check itself. A "🔄 Refresh Data Status" button appears once checked, useful after updating secrets, deploying new CMS assets, or testing in a different environment.
 - **❔ Getting Started** — an onboarding dialog covering how the system works, AI/demo-mode states, the confidence legend, limitations, and full version history.
 

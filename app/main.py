@@ -1152,7 +1152,7 @@ def _render_session_api_key_popover() -> None:
     see that module for the full resolution order. Closing or refreshing the
     browser tab ends the session and the key with it.
     """
-    with st.popover("⚙️", help="API key settings"):
+    with st.popover("Anthropic API Key", help="API key settings"):
         st.caption(
             "Live Coverage and Coding agents require an Anthropic API key. "
             "You may provide your own key for this browser session. The key "
@@ -1174,7 +1174,7 @@ def _render_session_api_key_popover() -> None:
             if st.button("Clear Key", key="clear_session_api_key_btn", use_container_width=True):
                 st.session_state.pop(_SESSION_API_KEY_NAME, None)
                 st.rerun()
-        st.caption("Used only for this browser session. Not stored or persisted.")
+        st.caption("Without a key, pre-generated cached AI results are shown for claims.")
 
 
 def _render_header() -> str:
@@ -1206,7 +1206,7 @@ def _render_header() -> str:
         )
 
     with st.container(key="header_controls_row"):
-        c_reviewer, c_ai, c_gear, c_data, c_help = st.columns([2.2, 0.85, 0.45, 1.6, 0.5])
+        c_reviewer, c_ai, c_gear, c_data, c_help = st.columns([2.0, 0.85, 1.6, 1.3, 0.5])
         with c_reviewer:
             reviewer_name = st.text_input(
                 "Reviewer",
@@ -1221,13 +1221,9 @@ def _render_header() -> str:
                     f'</div>',
                     unsafe_allow_html=True,
                 )
-            else:
-                st.markdown(
-                    f'<div style="margin-bottom:25px;">'
-                    f'{_pill("● AI: Disabled", "#6b7280", font_size="0.92rem", padding="5px 12px")}'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
+            # AI: Disabled pill intentionally hidden — the gear/key control next
+            # to it already conveys "no key configured" via its own label; no
+            # change to _AI_ENABLED's wording or logic when it IS shown.
         with c_gear:
             with st.container(key="ai_gear_col"):
                 _render_session_api_key_popover()
@@ -1286,8 +1282,6 @@ def _render_header() -> str:
         "<style>"
         "div[class*='st-key-header_controls_row'] div[data-testid='stHorizontalBlock']"
         "{ align-items: flex-end; }"
-        "div[class*='st-key-ai_gear_col']"
-        "{ position: relative; left: 60px; }"
         "</style>",
         unsafe_allow_html=True,
     )

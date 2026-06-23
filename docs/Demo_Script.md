@@ -198,7 +198,7 @@ These cached findings are never shown once a real `ANTHROPIC_API_KEY` is present
 
 **If no AI key available:**
 
-> "Without an API key, the header shows '● AI: Disabled' and the AI section shows '⚠ AI Agents Disabled' in-page — the rest of the app runs exactly the same. The architecture is designed so AI is additive: the rule layer provides the deterministic foundation, and the AI layer adds coverage reasoning where the policies are nuanced. Removing the AI key degrades to a rules-only mode, not a broken state."
+> "Without an API key, the header's 'AI: Enabled' pill is simply absent and the AI section shows '⚠ AI Agents Disabled' in-page — the rest of the app runs exactly the same. The architecture is designed so AI is additive: the rule layer provides the deterministic foundation, and the AI layer adds coverage reasoning where the policies are nuanced. Removing the AI key degrades to a rules-only mode, not a broken state."
 
 **Live validation results (2026-06-18):**
 
