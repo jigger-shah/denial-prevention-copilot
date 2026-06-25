@@ -8,6 +8,16 @@ Built on free public data: NPPES NPI Registry, CMS Coverage API (NCDs/LCDs), NCC
 
 > **Not for clinical or billing use.** This is a synthetic-data prototype demonstrating an architecture pattern, not production healthcare software. It is not HIPAA certified and has not been validated against real claims, real payer adjudication, or real patient data. Do not use it to make actual coverage, coding, or billing decisions.
 
+## Product Screenshots
+
+![Denial Prevention Copilot reference architecture](docs/assets/denial-copilot-architecture-overview.png)
+
+Reference architecture and product overview
+
+![Live Denial Prevention Copilot app snapshot](docs/assets/denial-copilot-live-app-snapshot.png)
+
+Live Denial Prevention Copilot app snapshot
+
 ## Current Public Release
 
 **V1.0 MVP**
